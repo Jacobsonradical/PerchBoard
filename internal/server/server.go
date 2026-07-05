@@ -22,6 +22,7 @@ import (
 	"github.com/Jacobsonradical/PerchBoard/internal/config"
 	"github.com/Jacobsonradical/PerchBoard/internal/feeds"
 	"github.com/Jacobsonradical/PerchBoard/internal/history"
+	"github.com/Jacobsonradical/PerchBoard/internal/llm"
 	"github.com/Jacobsonradical/PerchBoard/internal/scholarone"
 )
 
@@ -67,6 +68,11 @@ func (s *Server) Handler() http.Handler {
 
 	// --- ScholarOne on-demand retrieval (drives a headless browser) ---
 	mux.HandleFunc("/api/scholarone/retrieve", s.handleScholarOne)
+
+	// --- optional LLM key config + smart RSS classification ---
+	mux.HandleFunc("/api/llm/config", s.handleLLMConfig)
+	mux.HandleFunc("/api/llm/test", s.handleLLMTest)
+	mux.HandleFunc("/api/llm/classify", s.handleLLMClassify)
 
 	// --- dashboard state ---
 	mux.HandleFunc("/api/config", s.handleConfig)
@@ -386,6 +392,110 @@ func (s *Server) handleScholarOne(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	results := scholarone.Retrieve(ctx, req.Sites)
 	writeJSON(w, map[string]any{"results": results})
+}
+
+// handleLLMConfig gets / sets / clears the optional LLM API key used for smart RSS
+// filtering. GET never returns the key itself — only whether one is configured and
+// which provider/model — so the secret stays server-side.
+func (s *Server) handleLLMConfig(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		c, _ := s.paths.LoadLLM()
+		writeJSON(w, map[string]any{
+			"configured": c.Key != "",
+			"provider":   c.Provider,
+			"model":      c.Model,
+		})
+	case http.MethodPost:
+		body, err := io.ReadAll(io.LimitReader(r.Body, 16<<10))
+		if err != nil {
+			writeErr(w, http.StatusBadRequest, err)
+			return
+		}
+		var in config.LLMConfig
+		if err := json.Unmarshal(body, &in); err != nil {
+			writeErr(w, http.StatusBadRequest, err)
+			return
+		}
+		// Let the user change provider/model without re-typing the key: an empty
+		// key on save keeps the existing one.
+		if in.Key == "" {
+			if cur, _ := s.paths.LoadLLM(); cur.Key != "" {
+				in.Key = cur.Key
+			}
+		}
+		if err := s.paths.SaveLLM(in); err != nil {
+			writeErr(w, http.StatusInternalServerError, err)
+			return
+		}
+		writeJSON(w, map[string]any{"configured": in.Key != "", "provider": in.Provider, "model": in.Model})
+	case http.MethodDelete:
+		if err := s.paths.ClearLLM(); err != nil {
+			writeErr(w, http.StatusInternalServerError, err)
+			return
+		}
+		writeJSON(w, map[string]any{"configured": false})
+	default:
+		writeErr(w, http.StatusMethodNotAllowed, errors.New("method not allowed"))
+	}
+}
+
+// handleLLMTest does one tiny classification against the saved key so the UI can
+// tell the user whether the LLM connection actually works.
+func (s *Server) handleLLMTest(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeErr(w, http.StatusMethodNotAllowed, errors.New("method not allowed"))
+		return
+	}
+	cfg, _ := s.paths.LoadLLM()
+	if cfg.Key == "" {
+		writeErr(w, http.StatusBadRequest, errors.New("no LLM API key configured"))
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	defer cancel()
+	if _, err := llm.Classify(ctx, cfg.Provider, cfg.Key, cfg.Model,
+		[]llm.Item{{ID: "0", Title: "A new AI model was released today."}}, []string{"AI"}); err != nil {
+		writeErr(w, http.StatusBadGateway, err)
+		return
+	}
+	writeJSON(w, map[string]any{"ok": true, "provider": cfg.Provider, "model": cfg.Model})
+}
+
+// handleLLMClassify sorts the given item titles into the given filter-group titles
+// using the configured LLM. The key is read from local config, never from the
+// request, so the browser never handles it.
+func (s *Server) handleLLMClassify(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeErr(w, http.StatusMethodNotAllowed, errors.New("method not allowed"))
+		return
+	}
+	cfg, _ := s.paths.LoadLLM()
+	if cfg.Key == "" {
+		writeErr(w, http.StatusBadRequest, errors.New("no LLM API key configured"))
+		return
+	}
+	body, err := io.ReadAll(io.LimitReader(r.Body, 256<<10))
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, err)
+		return
+	}
+	var req struct {
+		Items  []llm.Item `json:"items"`
+		Groups []string   `json:"groups"`
+	}
+	if err := json.Unmarshal(body, &req); err != nil {
+		writeErr(w, http.StatusBadRequest, err)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 50*time.Second)
+	defer cancel()
+	result, err := llm.Classify(ctx, cfg.Provider, cfg.Key, cfg.Model, req.Items, req.Groups)
+	if err != nil {
+		writeErr(w, http.StatusBadGateway, err)
+		return
+	}
+	writeJSON(w, map[string]any{"classifications": result})
 }
 
 // ---- config --------------------------------------------------------------
