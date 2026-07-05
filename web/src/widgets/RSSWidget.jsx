@@ -45,6 +45,17 @@ export default function RSSWidget({ widget, onChange }) {
   const feeds = (s.feeds || []).map(normFeed)
   const filters = (s.filters || []).map(normFilter)
 
+  // Smart (LLM) filtering (3e): the display names of the filter groups, and a
+  // signature so the cached classifications can be dropped when the groups change.
+  const smartFilter = !!s.smartFilter
+  const groupNames = filters.map((f) => f.title || (f.words[0] || 'Filter'))
+  // The leading version tag lets a classifier change (e.g. the id-alignment fix)
+  // invalidate any cached results computed by the old logic.
+  const llmSig = 'v2|' + groupNames.join('|')
+  const classifyingRef = useRef(false)
+  const probedRef = useRef(false) // whether we've checked the LLM connection this session
+  const [llmError, setLlmError] = useState('') // last smart-filter failure, if any
+
   const [showSettings, setShowSettings] = useState(feeds.length === 0)
   const [collapsed, setCollapsed] = useState(() => new Set()) // collapsed section names
   // Active top tab: a feed url, or 'saved'. Default to the first site.
@@ -165,6 +176,51 @@ export default function RSSWidget({ widget, onChange }) {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data])
+
+  // Smart filtering (3e): when enabled, ask the backend LLM to sort not-yet-seen
+  // live items into the filter groups, caching the result per guid. Writes go
+  // through the refs so a slow classification can't clobber concurrent edits.
+  useEffect(() => {
+    if (!smartFilter || filters.length === 0 || !data) return
+    // Group titles changed → the cache is stale; drop it and re-classify next tick.
+    if ((st.llmSig || '') !== llmSig) {
+      const w = widgetRef.current, wst = w.state || {}
+      onChangeRef.current({ ...w, state: { ...wst, llmCats: {}, llmSig } })
+      return
+    }
+    if (classifyingRef.current) return
+    const cached = st.llmCats || {}
+    const ignoredSet = new Set(st.ignored || [])
+    const savedGuids = new Set((st.saved || []).map((x) => x.guid))
+    const pending = data
+      .filter((it) => it.guid && !ignoredSet.has(it.guid) && !savedGuids.has(it.guid) && !(it.guid in cached))
+      .slice(0, 60) // one batch per refresh keeps calls (and cost) bounded
+    if (pending.length === 0) {
+      // Everything is already classified, so no real call would be made. Do one
+      // cheap connectivity probe per session so a broken key still trips the
+      // failure banner even when there are no new items to classify.
+      if (!probedRef.current) {
+        probedRef.current = true
+        api.llmClassify([{ id: '__probe__', title: 'connectivity check' }], groupNames)
+          .then(() => setLlmError(''))
+          .catch((e) => setLlmError(e.message || 'classification failed'))
+      }
+      return
+    }
+    probedRef.current = true // a real classification also counts as a connection check
+    classifyingRef.current = true
+    api.llmClassify(pending.map((it) => ({ id: it.guid, title: it.title })), groupNames)
+      .then((res) => {
+        const w = widgetRef.current, wst = w.state || {}
+        const merged = { ...(wst.llmCats || {}) }
+        for (const it of pending) merged[it.guid] = res[it.guid] || []
+        onChangeRef.current({ ...w, state: { ...wst, llmCats: merged, llmSig } })
+        setLlmError('') // recovered
+      })
+      .catch((e) => setLlmError(e.message || 'classification failed'))
+      .finally(() => { classifyingRef.current = false })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [smartFilter, data, llmSig])
 
   if (showSettings) {
     return <RSSSettings widget={widget} feeds={feeds} filters={filters} setSettings={setSettings} done={() => setShowSettings(false)} />
@@ -325,10 +381,14 @@ export default function RSSWidget({ widget, onChange }) {
       ) : (
         <>
           {error && <div className="err-note">Some feeds failed: {error}</div>}
+          {smartFilter && llmError && (
+            <div className="err-note">⚠ Smart filter unavailable — word matching is handling filtering. ({llmError})</div>
+          )}
           <CategoryList
             categories={categorize(
               (data || []).filter((it) => it.feedUrl === current && inFeed(it)).slice(0, s.length || 50),
               filters,
+              { enabled: smartFilter, cats: st.llmCats || {} },
             )}
             collapsed={collapsed}
             toggleCat={toggleCat}
@@ -362,24 +422,36 @@ function CategoryList({ categories, collapsed, toggleCat, renderRow }) {
   })
 }
 
-// categorize buckets items into filter groups. An item joins a group if its
-// title contains ANY of the group's words (case-insensitive). Items matching no
-// group fall into "Other". With no filters, one "All" bucket (no header).
-function categorize(items, filters) {
+// categorize buckets items into filter groups. Word matching (title contains ANY
+// of the group's words) always runs — it's the reliable default. When `smart` is
+// enabled, the LLM's classification for an item is added on top (a UNION): an item
+// joins a group if the words match OR the LLM put it there, so the two reinforce
+// each other and an LLM hiccup never drops items the words would have caught.
+// Items matching nothing fall into "Other". With no filters, one "All" bucket.
+function categorize(items, filters, smart) {
   if (!filters || filters.length === 0) return [{ name: 'All', items }]
   const buckets = filters.map((f) => ({
     name: f.title || (f.words[0] || 'Filter'),
     items: [],
     tests: (f.words || []).map((w) => w.toLowerCase()).filter(Boolean),
   }))
+  const byName = new Map(buckets.map((b) => [b.name, b]))
   const other = { name: 'Other', items: [] }
+  const smartOn = smart && smart.enabled
   for (const it of items) {
     const title = (it.title || '').toLowerCase()
-    let matched = false
+    const hits = new Set()
+    // Word match (always).
     for (const b of buckets) {
-      if (b.tests.some((t) => title.includes(t))) { b.items.push(it); matched = true }
+      if (b.tests.some((t) => title.includes(t))) hits.add(b.name)
     }
-    if (!matched) other.items.push(it)
+    // LLM match (union) for items that have been classified.
+    if (smartOn) {
+      const llmCats = (smart.cats || {})[it.guid]
+      if (llmCats) for (const name of llmCats) if (byName.has(name)) hits.add(name)
+    }
+    if (hits.size === 0) other.items.push(it)
+    else for (const name of hits) byName.get(name).items.push(it)
   }
   return [...buckets, other].filter((b) => b.items.length > 0).map(({ name, items }) => ({ name, items }))
 }
@@ -469,6 +541,21 @@ function RSSSettings({ widget, feeds, filters, setSettings, done }) {
       <div className="section">
         <label>Max items per site: {s.length}</label>
         <input type="range" min="10" max="100" step="5" value={s.length} onChange={(e) => setSettings({ length: Number(e.target.value) })} style={{ width: '100%' }} />
+      </div>
+
+      <div className="section">
+        <label className="s1-check">
+          <input
+            type="checkbox"
+            checked={!!s.smartFilter}
+            onChange={(e) => setSettings({ smartFilter: e.target.checked })}
+          />
+          Smart filtering (LLM) — sort items into groups by meaning
+        </label>
+        <div className="muted-note" style={{ marginTop: 4 }}>
+          Uses your filter-group titles instead of the words. Requires an API key in
+          the dashboard ⚙ Settings; falls back to word matching when off or unset.
+        </div>
       </div>
 
       <button className="btn primary" onClick={done}>Done</button>
