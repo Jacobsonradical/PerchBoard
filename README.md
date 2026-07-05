@@ -10,6 +10,17 @@ Everything is customized **in the UI** — no config files to edit. Add feeds an
 tickers with a button, drag widgets around, drop in background photos (the text
 auto-adjusts for contrast), and pick fonts/units.
 
+## A look at it
+
+A drag-and-arrange grid of glassy widgets over your own background photo:
+
+![PerchBoard dashboard — clock, weather, calendar, Hacker News, and a filtered RSS feed over a soft background](icon/example1.jpg)
+
+Scroll down for the rest — here the ScholarOne submission/review retriever and an
+expanded Markets view with an intraday chart, key stats, and related news:
+
+![PerchBoard — the ScholarOne retriever and an expanded Markets (NVDA) view](icon/example2.jpg)
+
 ---
 
 # Getting started
