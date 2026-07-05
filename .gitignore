@@ -1,0 +1,14 @@
+# Build output / deps
+/web/node_modules/
+
+# Compiled binary (produced by `make build`)
+/perchboard
+
+# Temporary build files
+/tmp/
+
+# OS / editor cruft
+.DS_Store
+*.swp
+
+# NOTE: web/dist is intentionally committed — it is embedded into the Go binary.

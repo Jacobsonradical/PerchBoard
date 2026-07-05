@@ -1,0 +1,11 @@
+# Only send the source files required by the Docker build.
+**
+!go.mod
+!go.sum
+!*.go
+!internal/
+!internal/**
+!web/
+!web/**
+web/node_modules/
+web/dist/
