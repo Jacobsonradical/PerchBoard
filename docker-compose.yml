@@ -1,0 +1,20 @@
+# Run PerchBoard from the prebuilt image (published to GHCR by CI).
+#   docker compose up -d   ->   http://localhost:7171
+#
+# Your dashboard config and uploaded backgrounds persist in the named volume,
+# so they survive restarts and image updates.
+services:
+  perchboard:
+    image: ghcr.io/jacobsonradical/perchboard:latest
+    container_name: perchboard
+    ports:
+      # Publish on loopback only, so the dashboard is reachable from this machine
+      # but not from other devices on the same network. To open it to your LAN
+      # on purpose, change this to "7171:7171".
+      - "127.0.0.1:7171:7171"
+    volumes:
+      - perchboard-data:/data
+    restart: unless-stopped
+
+volumes:
+  perchboard-data:

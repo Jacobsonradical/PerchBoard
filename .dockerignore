@@ -1,0 +1,11 @@
+# Keep the build context small. The frontend is rebuilt inside the image and the
+# Go binary embeds that fresh build, so none of these need to be sent to Docker.
+web/node_modules
+web/dist
+.git
+.gitignore
+perchboard
+
+# Local working notes / scratch
+claude
+tmp
