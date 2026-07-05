@@ -30,7 +30,10 @@ Both serve the dashboard at **http://localhost:7171**.
 ### Step 1 — Install Docker
 
 - **Windows / macOS:** download **Docker Desktop** from
-  <https://www.docker.com/products/docker-desktop/> and install it.
+  <https://www.docker.com/products/docker-desktop/> and install it. On Windows it
+  runs on the **WSL 2** backend — the installer sets this up for you (accept the
+  "Use WSL 2" option if asked; on older builds, enable WSL 2 first with
+  `wsl --install` in an admin PowerShell, then reboot).
 - **Linux (Ubuntu):** install Docker Engine following
   <https://docs.docker.com/engine/install/ubuntu/>.
 
@@ -70,6 +73,20 @@ docker compose up -d
 That makes a folder `~/perchboard`, drops a `docker-compose.yml` into it, and
 starts the container in the background.
 
+> **On Windows:** the commands above work as-is in a **WSL 2** shell or **Git
+> Bash**. In native **PowerShell**, use these equivalents:
+>
+> ```powershell
+> mkdir $HOME\perchboard; cd $HOME\perchboard
+> curl.exe -sL https://raw.githubusercontent.com/Jacobsonradical/PerchBoard/main/docker-compose.yml -o docker-compose.yml
+> docker compose up -d
+> ```
+>
+> (`curl.exe` is the real curl bundled with Windows 10/11 — plain `curl` in
+> PowerShell is an alias for a different command, so the `.exe` matters here.)
+> Everything after this — `docker ps`, `logs`, `compose pull`, etc. — is the same
+> on every platform.
+
 **Or build it yourself from source** (if the prebuilt image isn't available):
 
 ```bash
@@ -88,7 +105,9 @@ What the `docker run` flags mean:
   from this machine only (not from other devices on your network). Drop the
   `127.0.0.1:` prefix only if you deliberately want to open it to your LAN.
 - `-v perchboard-data:/data` — save your dashboard + backgrounds in a volume so
-  they survive restarts and updates.
+  they survive restarts and updates. This is a Docker-managed **named volume**, so
+  it works the same on Windows, macOS, and Linux — there are no host folder paths
+  to translate (nothing like `C:\...` to get right).
 
 ### Step 4 — Open it
 
