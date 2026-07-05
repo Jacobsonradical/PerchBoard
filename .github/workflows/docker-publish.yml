@@ -1,0 +1,50 @@
+# Build the multi-arch image and publish it to GitHub Container Registry on every
+# push to main, so `docker compose up` (which pulls the prebuilt image) just works.
+#
+# The Dockerfile runs the heavy build stages on the runner's native arch and
+# cross-compiles, so Buildx only emulates the small runtime stage — a full arm64
+# build under QEMU would push CI past half an hour.
+name: Publish Docker image
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# A newer push supersedes an in-flight build.
+concurrency:
+  group: docker-publish-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ghcr.io/jacobsonradical/perchboard:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
