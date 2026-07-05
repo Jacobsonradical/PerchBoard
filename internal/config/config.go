@@ -9,6 +9,7 @@
 package config
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 )
@@ -18,6 +19,16 @@ type Paths struct {
 	Dir         string // base data dir, e.g. ~/.config/perchboard
 	ConfigFile  string // dashboard state JSON
 	Backgrounds string // directory holding uploaded background images
+	LLMFile     string // optional LLM provider + API key (for smart RSS filtering)
+}
+
+// LLMConfig is the optional API key + model used for LLM-based RSS filtering. It
+// lives in its own file (not the dashboard config the frontend owns) so the key
+// never rides along in the state JSON, and it is never sent back to the browser.
+type LLMConfig struct {
+	Provider string `json:"provider"` // "claude" | "openai"
+	Model    string `json:"model"`    // optional; blank = provider default
+	Key      string `json:"key"`
 }
 
 // Resolve decides where data lives. We honour PERCHBOARD_DATA for Docker /
@@ -36,6 +47,7 @@ func Resolve() (Paths, error) {
 		Dir:         base,
 		ConfigFile:  filepath.Join(base, "config.json"),
 		Backgrounds: filepath.Join(base, "backgrounds"),
+		LLMFile:     filepath.Join(base, "llm.json"),
 	}
 	// Ensure both the base dir and the backgrounds dir exist.
 	if err := os.MkdirAll(p.Backgrounds, 0o755); err != nil {
@@ -62,4 +74,40 @@ func (p Paths) SaveConfig(data []byte) error {
 		return err
 	}
 	return os.Rename(tmp, p.ConfigFile)
+}
+
+// LoadLLM returns the saved LLM config, or a zero value (no error) if none is set.
+func (p Paths) LoadLLM() (LLMConfig, error) {
+	var c LLMConfig
+	data, err := os.ReadFile(p.LLMFile)
+	if os.IsNotExist(err) {
+		return c, nil
+	}
+	if err != nil {
+		return c, err
+	}
+	_ = json.Unmarshal(data, &c)
+	return c, nil
+}
+
+// SaveLLM writes the LLM config with owner-only permissions (0600) since it holds
+// an API key.
+func (p Paths) SaveLLM(c LLMConfig) error {
+	data, err := json.Marshal(c)
+	if err != nil {
+		return err
+	}
+	tmp := p.LLMFile + ".tmp"
+	if err := os.WriteFile(tmp, data, 0o600); err != nil {
+		return err
+	}
+	return os.Rename(tmp, p.LLMFile)
+}
+
+// ClearLLM removes the saved LLM config (missing file is not an error).
+func (p Paths) ClearLLM() error {
+	if err := os.Remove(p.LLMFile); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return nil
 }
