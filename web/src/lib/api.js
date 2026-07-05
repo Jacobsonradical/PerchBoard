@@ -37,6 +37,38 @@ export const api = {
     return data.results || []
   },
 
+  // --- optional LLM key config + smart RSS filtering ---
+  // The key is stored server-side; llmConfig() never returns it, only whether one
+  // is set and which provider/model.
+  llmConfig: () => getJSON('/api/llm/config'),
+  llmSaveConfig: async ({ provider, model, key }) => {
+    const res = await fetch('/api/llm/config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ provider, model, key }),
+    })
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok) throw new Error(data.error || 'failed to save LLM settings')
+    return data
+  },
+  llmClearConfig: () => fetch('/api/llm/config', { method: 'DELETE' }),
+  llmTest: async () => {
+    const res = await fetch('/api/llm/test', { method: 'POST' })
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok) throw new Error(data.error || `test failed (${res.status})`)
+    return data
+  },
+  llmClassify: async (items, groups) => {
+    const res = await fetch('/api/llm/classify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ items, groups }),
+    })
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok) throw new Error(data.error || `classify failed (${res.status})`)
+    return data.classifications || {}
+  },
+
   // --- dashboard config ---
   loadConfig: () => getJSON('/api/config'),
   saveConfig: async (cfg) => {

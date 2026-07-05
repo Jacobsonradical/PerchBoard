@@ -27,8 +27,13 @@ export const widgetDefaults = {
       // title contains any of the words. Empty = feeds show as one list.
       filters: [],
       length: 50,
+      // When true (and an LLM key is configured in Settings), items are sorted
+      // into the filter groups by meaning instead of literal word matching.
+      smartFilter: false,
     },
-    state: { read: [], ignored: [], seen: [] },
+    // llmCats caches the LLM's group assignment per item guid; llmSig is the
+    // signature of the group titles it was computed against (cleared when they change).
+    state: { read: [], ignored: [], seen: [], llmCats: {}, llmSig: '' },
   },
   hackernews: { title: 'Hacker News', settings: { limit: 30 }, state: { read: [] } },
   markets: { title: 'Markets', settings: { symbols: ['AAPL', 'BTC-USD', '^GSPC'] } },
