@@ -1,19 +1,25 @@
-// Package scholarone retrieves a user's paper and review status from ScholarOne
-// Manuscripts journal sites (e.g. Information Systems Research, Management
-// Science, MIS Quarterly).
+// Package tracker retrieves a user's paper and review status from manuscript
+// systems. Each site names the system it runs on; supported so far:
 //
-// ScholarOne has no public API and its login + navigation are entirely
-// JavaScript-driven (the Log In button and the Author/Review menu items submit a
-// form carrying per-session tokens). Replaying that by hand over plain HTTP is
-// brittle, so we drive a real headless Chrome the same way a person would: open
-// the site, type the credentials, click Log In, then click into the Author and
-// Reviewer dashboards and read the tables. The resulting HTML is parsed with
-// goquery into the small structs below.
+//   - "scholarone" (default) — ScholarOne Manuscripts journal sites, e.g.
+//     Information Systems Research, Management Science, MIS Quarterly
+//     (this file);
+//   - "pcs" — Precision Conference Solutions, used by conferences such as
+//     ICIS and the SIGCHI family (pcs.go);
+//   - "paperfox" — PaperFox.ai, a modern conference system, e.g. CIST
+//     (paperfox.go).
+//
+// None of these systems has a public API, and ScholarOne's login + navigation
+// are entirely JavaScript-driven (form submits carrying per-session tokens),
+// so we drive a real headless Chrome the same way a person would: open the
+// site, type the credentials, click log in, then click into the dashboards and
+// read the tables. The resulting HTML is parsed with goquery into the small
+// structs below, which are shared by every system driver.
 //
 // Privacy: credentials arrive per request, are used only to fill the login form
 // in memory, and are never written to disk or logged. Each retrieval runs in a
 // throwaway browser profile that is discarded when the context is cancelled.
-package scholarone
+package tracker
 
 import (
 	"context"
@@ -34,24 +40,34 @@ import (
 const userAgent = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 " +
 	"(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
 
-// SiteCreds is one journal site to retrieve, with the credentials to use for it.
+// SiteCreds is one site to retrieve, with the credentials to use for it.
+// System selects the driver ("scholarone" when empty, or "pcs").
 type SiteCreds struct {
 	Key      string `json:"key"`
 	Name     string `json:"name"`
 	URL      string `json:"url"`
+	System   string `json:"system,omitempty"`
 	Username string `json:"username"`
 	Password string `json:"password"`
 }
 
-// Paper is one row from the Author dashboard ("Manuscripts" queue).
+// Paper is one submission row (ScholarOne's Author dashboard, or PCS's
+// Submissions page — the PCS-only fields are empty on ScholarOne rows and
+// vice versa).
 type Paper struct {
 	ID               string   `json:"id"`
 	Title            string   `json:"title"`
-	Status           string   `json:"status"`           // decision / queue line(s)
-	Editors          []string `json:"editors"`          // e.g. "SE: Zhang, Jingjing"
-	SubmittingAuthor string   `json:"submittingAuthor"` // may be empty
-	Created          string   `json:"created"`
-	Submitted        string   `json:"submitted"`
+	Status           string   `json:"status"`                     // decision / queue line(s)
+	Editors          []string `json:"editors,omitempty"`          // e.g. "SE: Zhang, Jingjing"
+	SubmittingAuthor string   `json:"submittingAuthor,omitempty"` // may be empty
+	Created          string   `json:"created,omitempty"`
+	Submitted        string   `json:"submitted,omitempty"`
+	// PCS submissions table extras.
+	Section  string   `json:"section,omitempty"`  // page section, e.g. "Past Submissions"
+	Deadline string   `json:"deadline,omitempty"` // submission deadline
+	Category string   `json:"category,omitempty"`
+	Note     string   `json:"note,omitempty"`
+	Actions  []string `json:"actions,omitempty"` // links offered in the row
 }
 
 // ReviewCell is a single labelled value in a review row — the fallback shape
@@ -100,9 +116,11 @@ type SiteResult struct {
 }
 
 var (
-	submitRe = regexp.MustCompile(`(?i)Submitting Author:\s*(.+?)(?:\s+Cover Letter\b.*)?$`)
-	wsRe     = regexp.MustCompile(`\s+`)
-	wordRe   = regexp.MustCompile(`[A-Za-z0-9]`) // tells a real label from a "———" separator
+	submitRe  = regexp.MustCompile(`(?i)Submitting Author:\s*(.+?)(?:\s+Cover Letter\b.*)?$`)
+	wsRe      = regexp.MustCompile(`\s+`)
+	wordRe    = regexp.MustCompile(`[A-Za-z0-9]`)                      // tells a real label from a "———" separator
+	dateRe    = regexp.MustCompile(`[A-Z][a-z]+ \d{1,2}, \d{4}`)       // "June 5, 2026" (PaperFox)
+	reviewsRe = regexp.MustCompile(`\d+\s*/\s*\d+\s+reviews?`)         // "0/2 reviews" (PaperFox)
 )
 
 // Retrieve fetches all sites concurrently (each in its own browser) and returns
@@ -130,11 +148,40 @@ func Retrieve(ctx context.Context, sites []SiteCreds) []SiteResult {
 		wg.Add(1)
 		go func(i int, c SiteCreds) {
 			defer wg.Done()
-			results[i] = retrieveSite(ctx, c)
+			switch c.System {
+			case "pcs":
+				results[i] = retrievePCS(ctx, c)
+			case "paperfox":
+				results[i] = retrievePaperFox(ctx, c)
+			default: // "" or "scholarone"
+				results[i] = retrieveScholarOne(ctx, c)
+			}
 		}(i, c)
 	}
 	wg.Wait()
 	return results
+}
+
+// newSiteBrowser starts a fresh headless Chrome in a throwaway profile for one
+// site's retrieval, with a hard per-site time ceiling so one stuck site can't
+// hang the whole request. Call the returned cleanup when done.
+func newSiteBrowser(parent context.Context, ceiling time.Duration) (context.Context, func()) {
+	// no-sandbox keeps it working in containers and across desktop setups
+	// without extra privileges.
+	opts := append(chromedp.DefaultExecAllocatorOptions[:],
+		chromedp.Flag("headless", true),
+		chromedp.Flag("no-sandbox", true),
+		chromedp.Flag("disable-gpu", true),
+		chromedp.WindowSize(1280, 900),
+		chromedp.UserAgent(userAgent),
+	)
+	if p := chromePath(); p != "" {
+		opts = append(opts, chromedp.ExecPath(p))
+	}
+	allocCtx, cancelAlloc := chromedp.NewExecAllocator(parent, opts...)
+	ctx, cancelCtx := chromedp.NewContext(allocCtx)
+	ctx, cancelTimeout := context.WithTimeout(ctx, ceiling)
+	return ctx, func() { cancelTimeout(); cancelCtx(); cancelAlloc() }
 }
 
 // chromePath finds an installed Chrome/Chromium. Retrieval drives a headless
@@ -172,35 +219,19 @@ func chromePath() string {
 	return ""
 }
 
-// retrieveSite logs into one site and scrapes its Author and Reviewer pages.
-func retrieveSite(parent context.Context, c SiteCreds) SiteResult {
+// retrieveScholarOne logs into one ScholarOne site and scrapes its Author and
+// Reviewer pages.
+func retrieveScholarOne(parent context.Context, c SiteCreds) SiteResult {
 	res := SiteResult{Key: c.Key, Name: c.Name, URL: c.URL}
 	if c.URL == "" || c.Username == "" || c.Password == "" {
 		res.Error = "missing site URL, username, or password"
 		return res
 	}
 
-	// A headless browser in a throwaway profile. no-sandbox keeps it working in
-	// containers and across desktop setups without extra privileges.
-	opts := append(chromedp.DefaultExecAllocatorOptions[:],
-		chromedp.Flag("headless", true),
-		chromedp.Flag("no-sandbox", true),
-		chromedp.Flag("disable-gpu", true),
-		chromedp.WindowSize(1280, 900),
-		chromedp.UserAgent(userAgent),
-	)
-	if p := chromePath(); p != "" {
-		opts = append(opts, chromedp.ExecPath(p))
-	}
-	allocCtx, cancelAlloc := chromedp.NewExecAllocator(parent, opts...)
-	defer cancelAlloc()
-	ctx, cancelCtx := chromedp.NewContext(allocCtx)
-	defer cancelCtx()
-	// A hard ceiling per site so one stuck journal can't hang the whole request.
-	// (3 min, not 2: walking the extra reviewer queues — Scores Submitted,
-	// Invitations, possibly paginated — adds a few navigations per site.)
-	ctx, cancelTimeout := context.WithTimeout(ctx, 3*time.Minute)
-	defer cancelTimeout()
+	// 3 min ceiling, not 2: walking the extra reviewer queues — Scores
+	// Submitted, Invitations, possibly paginated — adds a few navigations.
+	ctx, cleanup := newSiteBrowser(parent, 3*time.Minute)
+	defer cleanup()
 
 	// Open the login page and submit the credentials.
 	err := chromedp.Run(ctx,

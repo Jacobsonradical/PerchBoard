@@ -23,7 +23,7 @@ import (
 	"github.com/Jacobsonradical/PerchBoard/internal/feeds"
 	"github.com/Jacobsonradical/PerchBoard/internal/history"
 	"github.com/Jacobsonradical/PerchBoard/internal/llm"
-	"github.com/Jacobsonradical/PerchBoard/internal/scholarone"
+	"github.com/Jacobsonradical/PerchBoard/internal/tracker"
 )
 
 // How long RSS history is kept and how many items per feed are retained.
@@ -67,7 +67,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/symbolsearch", s.handleSymbolSearch)
 
 	// --- ScholarOne on-demand retrieval (drives a headless browser) ---
-	mux.HandleFunc("/api/scholarone/retrieve", s.handleScholarOne)
+	mux.HandleFunc("/api/tracker/retrieve", s.handleTracker)
+	mux.HandleFunc("/api/scholarone/retrieve", s.handleTracker) // legacy alias
 
 	// --- optional LLM key config + smart RSS classification ---
 	mux.HandleFunc("/api/llm/config", s.handleLLMConfig)
@@ -359,14 +360,14 @@ func (s *Server) handleSymbolSearch(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, res)
 }
 
-// ---- ScholarOne ----------------------------------------------------------
+// ---- Paper tracker (ScholarOne, PCS, ...) --------------------------------
 
-// handleScholarOne retrieves paper/review status for one or more ScholarOne
-// sites. Credentials arrive in the POST body, are passed straight to the
-// retriever (which uses them only to fill the in-memory login form), and are
-// never persisted or logged. The response carries only the scraped, non-secret
+// handleTracker retrieves paper/review status for one or more manuscript-system
+// sites (each names its system — ScholarOne, PCS, …). Credentials arrive in the
+// POST body, are passed straight to the retriever (which uses them only to fill
+// the in-memory login form), and are never persisted or logged. The response carries only the scraped, non-secret
 // results so the widget can cache them client-side.
-func (s *Server) handleScholarOne(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleTracker(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeErr(w, http.StatusMethodNotAllowed, errors.New("method not allowed"))
 		return
@@ -377,7 +378,7 @@ func (s *Server) handleScholarOne(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		Sites []scholarone.SiteCreds `json:"sites"`
+		Sites []tracker.SiteCreds `json:"sites"`
 	}
 	if err := json.Unmarshal(body, &req); err != nil {
 		writeErr(w, http.StatusBadRequest, err)
@@ -390,7 +391,7 @@ func (s *Server) handleScholarOne(w http.ResponseWriter, r *http.Request) {
 	// One generous ceiling for the whole batch; each site also caps itself.
 	ctx, cancel := context.WithTimeout(r.Context(), 4*time.Minute)
 	defer cancel()
-	results := scholarone.Retrieve(ctx, req.Sites)
+	results := tracker.Retrieve(ctx, req.Sites)
 	writeJSON(w, map[string]any{"results": results})
 }
 
