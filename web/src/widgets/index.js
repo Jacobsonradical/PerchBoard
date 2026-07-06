@@ -6,7 +6,7 @@ import RSSWidget from './RSSWidget'
 import HackerNewsWidget from './HackerNewsWidget'
 import MarketsWidget from './MarketsWidget'
 import CalendarWidget from './CalendarWidget'
-import ScholarOneWidget from './ScholarOneWidget'
+import TrackerWidget from './TrackerWidget'
 
 export const WIDGETS = {
   clock: { component: ClockWidget, label: 'Clock', emoji: '🕐' },
@@ -15,5 +15,5 @@ export const WIDGETS = {
   hackernews: { component: HackerNewsWidget, label: 'Hacker News', emoji: '🟧' },
   markets: { component: MarketsWidget, label: 'Markets', emoji: '📈' },
   calendar: { component: CalendarWidget, label: 'Calendar', emoji: '📅' },
-  scholarone: { component: ScholarOneWidget, label: 'ScholarOne', emoji: '🎓' },
+  scholarone: { component: TrackerWidget, label: 'Paper Tracker', emoji: '🎓' },
 }

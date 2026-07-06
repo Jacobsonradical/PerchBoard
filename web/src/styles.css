@@ -459,6 +459,18 @@ input[type="file"] { border: none; background: none; padding: 0; font-size: 12px
 /* Settings: site editor rows */
 .s1-site-edit { display: flex; align-items: flex-start; gap: 8px; margin-bottom: 8px; }
 .s1-url-input { flex: none; width: 100%; margin-top: 4px; font-size: 11px; color: var(--fg-dim); }
+.s1-sysready { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+.s1-badge.off { opacity: 0.5; }
+/* Step-1 welcome panel in the settings wizard — deliberately more prominent
+   than a muted note, since it explains the whole setup. */
+.s1-intro { background: var(--fill); border-radius: 12px; padding: 12px 14px; margin-bottom: 12px; }
+.s1-intro p { margin: 0 0 8px; font-size: 13.5px; line-height: 1.55; color: var(--fg); }
+.s1-intro p:last-child { margin-bottom: 0; }
+
+/* The mode menu on the results view — each system is its own "page". */
+.s1-mode-row { margin-bottom: 8px; }
+.s1-mode-select { background: var(--fill); color: var(--fg); border: none; border-radius: 9px; padding: 5px 10px; font-size: 12px; font-weight: 600; cursor: pointer; }
+.s1-mode-select:hover { background: var(--fill-strong); }
 
 /* Results */
 .s1-results { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }

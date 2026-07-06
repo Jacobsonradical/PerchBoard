@@ -39,14 +39,15 @@ export const widgetDefaults = {
   markets: { title: 'Markets', settings: { symbols: ['AAPL', 'BTC-USD', '^GSPC'] } },
   calendar: { title: 'Calendar', settings: {} },
   scholarone: {
-    title: 'ScholarOne',
+    title: 'Paper Tracker',
     settings: {
-      // The journal sites to query. Each is { key, name, url, enabled }. All
-      // three start enabled; edit/rename/add via the widget's ⚙ button.
+      // The ScholarOne journals to query (the widget's ScholarOne tab); PCS and
+      // PaperFox are built into their own tabs with fixed portal URLs, so they
+      // don't appear here. Edit/rename/add journals via the widget's ⚙ button.
       sites: [
-        { key: 'isr', name: 'Information Systems Research', url: 'https://mc.manuscriptcentral.com/isr', enabled: true },
-        { key: 'ms', name: 'Management Science', url: 'https://mc.manuscriptcentral.com/ms', enabled: true },
-        { key: 'misq', name: 'MIS Quarterly', url: 'https://mc.manuscriptcentral.com/misq', enabled: true },
+        { key: 'isr', name: 'Information Systems Research', url: 'https://mc.manuscriptcentral.com/isr', system: 'scholarone', enabled: true },
+        { key: 'ms', name: 'Management Science', url: 'https://mc.manuscriptcentral.com/ms', system: 'scholarone', enabled: true },
+        { key: 'misq', name: 'MIS Quarterly', url: 'https://mc.manuscriptcentral.com/misq', system: 'scholarone', enabled: true },
       ],
       // When true, one username/password is used for every site (the common case).
       sameCreds: true,

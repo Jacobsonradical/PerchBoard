@@ -2,11 +2,13 @@ import React, { useState, useEffect } from 'react'
 import { api } from '../lib/api'
 import { hasVault, clearVault, saveVault, openVault } from '../lib/credvault'
 
-// ScholarOneWidget: on-demand retrieval of paper (Author) and review (Reviewer)
-// status across ScholarOne journal sites. The user enters their login(s); we ask
-// the local backend to drive a headless browser, log in to each site, and read
-// the dashboards. Credentials live only in this component's memory for the
-// duration of a retrieval — never in the dashboard config.
+// TrackerWidget (widget type "scholarone", key kept so saved configs survive):
+// on-demand retrieval of paper and review status across manuscript-system
+// sites. Each site names its system — ScholarOne journals (ISR, Management
+// Science, MISQ, …) or PCS conferences (e.g. ICIS) — and the local backend
+// drives a headless browser to log in and read that system's dashboards.
+// Credentials live only in this component's memory for the duration of a
+// retrieval — never in the dashboard config.
 //
 // Two modes for results caching:
 //  - Default (no saved login): scraped results are cached in widget.state so they
@@ -15,14 +17,47 @@ import { hasVault, clearVault, saveVault, openVault } from '../lib/credvault'
 //    results are kept in MEMORY only for the session — nothing sensitive is written
 //    to disk, and after a reload the widget shows only the unlock screen until the
 //    master passphrase is entered.
-export default function ScholarOneWidget({ widget, onChange }) {
+// The systems the tracker can drive, shown as top-level tabs. ScholarOne is a
+// family of per-journal sites (defaults below, more addable in ⚙); PCS and
+// PaperFox are each a single portal with a fixed URL, so their site entry is
+// built in — the user only ever types a login.
+const SYSTEMS = [
+  { id: 'scholarone', label: 'ScholarOne', hint: 'e.g., ISR, Management Science, MISQ' },
+  {
+    id: 'pcs', label: 'PCS', hint: 'e.g., ICIS',
+    site: { key: 'pcs', name: 'PCS', url: 'https://new.precisionconference.com/user/login', system: 'pcs' },
+  },
+  {
+    id: 'paperfox', label: 'PaperFox', hint: 'e.g., CIST',
+    site: { key: 'paperfox', name: 'PaperFox', url: 'https://www.paperfox.ai/signin', system: 'paperfox' },
+  },
+]
+
+export default function TrackerWidget({ widget, onChange }) {
   const s = widget.settings || {}
   const st = widget.state || { results: [], retrievedAt: '' }
-  const sites = s.sites || []
-  const enabledSites = sites.filter((x) => x.enabled !== false)
+  // Settings hold only the ScholarOne journal list; PCS/PaperFox are implicit
+  // (old configs may still carry their entries — ignored here).
+  const isS1 = (site) => (site.system || 'scholarone') === 'scholarone'
+  const journals = (s.sites || []).filter(isS1)
+  const enabledJournals = journals.filter((x) => x.enabled !== false)
   const sameCreds = s.sameCreds !== false
 
+  // Which system's results are being VIEWED — the tabs only switch the view.
+  // Retrieval always covers every system that has a login (one Retrieve / ↻
+  // refreshes everything at once).
+  const [activeSystem, setActiveSystem] = useState('scholarone')
+  const sitesFor = (sysId) => {
+    if (sysId === 'scholarone') return enabledJournals
+    const def = SYSTEMS.find((x) => x.id === sysId)
+    return def && def.site ? [def.site] : []
+  }
+
   const [showSettings, setShowSettings] = useState(false)
+  // Settings are a two-step wizard: 1 = sites (what to track), 2 = logins.
+  // Every visit to ⚙ walks the same two steps.
+  const [settingsStep, setSettingsStep] = useState(1)
+  const openSettings = () => { setSettingsStep(1); setShowSettings(true) }
   const [editingCreds, setEditingCreds] = useState(false) // force the form back even with cached results
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
@@ -85,7 +120,16 @@ export default function ScholarOneWidget({ widget, onChange }) {
     try {
       const v = await openVault(widget.id, unlockPass)
       setUnlockPass('')
-      retrieve({ shared: v.shared || { username: '', password: '' }, perSite: v.perSite || {} })
+      // Vault logins, with anything typed in settings this session on top (so
+      // a just-added PCS/PaperFox login joins the retrieval before re-saving).
+      const ps = { ...(v.perSite || {}) }
+      for (const [k, c] of Object.entries(perSite)) {
+        if (credOk(c)) ps[k] = c
+      }
+      retrieve({
+        shared: credOk(shared) ? shared : (v.shared || { username: '', password: '' }),
+        perSite: ps,
+      })
     } catch (e) {
       setVaultMsg(e.message || 'Wrong passphrase.')
     }
@@ -112,10 +156,22 @@ export default function ScholarOneWidget({ widget, onChange }) {
 
   // Protected = a saved login is (or is being) used; its results stay in memory.
   const protectedMode = saveOn || vaultPresent
-  const results = protectedMode ? (sessionResults || []) : (st.results || [])
+  const allResults = protectedMode ? (sessionResults || []) : (st.results || [])
   const retrievedAt = protectedMode ? sessionRetrievedAt : (st.retrievedAt || '')
-  const hasResults = results.length > 0
+  // Each cached result is tagged with its system; older caches predate the tag
+  // and were ScholarOne-only. The tabs switch between systems that have results.
+  const resultSystem = (r) => r.system || 'scholarone'
+  const hasResults = allResults.length > 0
   const showForm = !hasResults || editingCreds
+
+  // A system takes part in a retrieval when its login is filled in (in ⚙
+  // settings, this session) — a blank login just skips that system. A saved
+  // vault may hold more logins than the session has; retrieval merges them in.
+  const credOk = (c) => c && (c.username || '').trim() && c.password
+  const sessionCredsFor = (site) =>
+    isS1(site) && sameCreds ? shared : (perSite[site.key] || { username: '', password: '' })
+  const systemReady = (sysId) => sitesFor(sysId).some((site) => credOk(sessionCredsFor(site)))
+  const anyReady = SYSTEMS.some((sys) => systemReady(sys.id))
 
   // --- helpers --------------------------------------------------------------
 
@@ -126,28 +182,34 @@ export default function ScholarOneWidget({ widget, onChange }) {
   const setCredFor = (key, patch) =>
     setPerSite((p) => ({ ...p, [key]: { ...credFor(key), ...patch } }))
 
-  // `ov` optionally supplies { shared, perSite } directly — used when unlocking
-  // auto-retrieves, since the decrypted creds aren't in state yet (setState is async).
+  // Retrieves EVERY system whose login is available — one click refreshes
+  // ScholarOne, PCS, and PaperFox together; a system without a login is simply
+  // skipped. `ov` optionally supplies { shared, perSite } directly, used when
+  // unlocking auto-retrieves (the decrypted creds aren't in state yet,
+  // setState is async).
   const retrieve = async (ov) => {
     setErr('')
-    if (!enabledSites.length) {
-      setErr('Add at least one journal site in settings (⚙).')
-      return
-    }
     const sh = ov?.shared || shared
     const ps = ov?.perSite || perSite
-    const creds = enabledSites.map((site) => {
-      const c = sameCreds ? sh : (ps[site.key] || { username: '', password: '' })
-      return {
-        key: site.key,
-        name: site.name,
-        url: site.url,
-        username: (c.username || '').trim(),
-        password: c.password || '',
+    const creds = []
+    for (const sys of SYSTEMS) {
+      for (const site of sitesFor(sys.id)) {
+        // The shared login covers only the ScholarOne journals; PCS and
+        // PaperFox are separate services with their own credentials.
+        const c = isS1(site) && sameCreds ? sh : (ps[site.key] || { username: '', password: '' })
+        if (!credOk(c)) continue
+        creds.push({
+          key: site.key,
+          name: site.name,
+          url: site.url,
+          system: site.system || 'scholarone',
+          username: (c.username || '').trim(),
+          password: c.password || '',
+        })
       }
-    })
-    if (creds.some((c) => !c.username || !c.password)) {
-      setErr('Enter a username and password for every site.')
+    }
+    if (!creds.length) {
+      setErr('No logins set up yet — open settings (⚙) to enter them.')
       return
     }
     // If the user is enabling save for the first time, validate the master
@@ -168,17 +230,25 @@ export default function ScholarOneWidget({ widget, onChange }) {
     }
     setBusy(true)
     try {
-      const res = await api.scholarOne(creds)
+      const res = await api.tracker(creds)
       const now = new Date().toISOString()
+      // Results come back in creds order; tag each with its system. Systems
+      // not part of this retrieval (no login this time) keep their old cache.
+      const tagged = res.map((r, i) => ({ ...r, system: creds[i]?.system || 'scholarone' }))
+      const retrievedSystems = new Set(creds.map((c) => c.system))
+      const merged = [
+        ...allResults.filter((r) => !retrievedSystems.has(resultSystem(r))),
+        ...tagged,
+      ]
       if (protectedMode) {
         // Keep protected results in memory only; never persist them to disk.
-        setSessionResults(res)
+        setSessionResults(merged)
         setSessionRetrievedAt(now)
         if ((st.results && st.results.length) || st.retrievedAt) {
           update({ state: { results: [], retrievedAt: '' } })
         }
       } else {
-        update({ state: { results: res, retrievedAt: now } })
+        update({ state: { results: merged, retrievedAt: now } })
       }
       // Save the encrypted vault only when first creating it (a passphrase was just
       // set). An existing vault is never re-written on a normal retrieve.
@@ -188,14 +258,18 @@ export default function ScholarOneWidget({ widget, onChange }) {
           setVaultPresent(true)
         } catch { /* saving is best-effort; a failure shouldn't lose the results */ }
       }
-      // Always drop the credentials (and passphrase) from memory after a retrieval,
-      // so the next one requires the passphrase again — nothing stays "unlocked".
       setEditingCreds(false)
       setManual(false)
       setPass2('')
       setPassphrase('')
-      setShared({ username: '', password: '' })
-      setPerSite({})
+      // With a saved login, credentials are only ever decrypted transiently —
+      // drop them (and the passphrase) after every retrieval so nothing stays
+      // "unlocked". Without a vault the user typed them in settings for this
+      // session; keep them so ↻ works without a trip back to settings.
+      if (vaultPresent || saveOn) {
+        setShared({ username: '', password: '' })
+        setPerSite({})
+      }
     } catch (e) {
       setErr(e.message || 'Retrieval failed.')
     } finally {
@@ -204,21 +278,200 @@ export default function ScholarOneWidget({ widget, onChange }) {
   }
 
   // --- settings -------------------------------------------------------------
+  // Settings hold everything needed BEFORE a retrieval: the ScholarOne journal
+  // list, the logins for each system (a blank login just skips that system),
+  // and the optional encrypted save-login. The main view is then only
+  // Retrieve → results.
 
   if (showSettings) {
     return (
       <div className="s1">
+        <div className="s1-head">
+          <div className="s1-title">
+            {settingsStep === 1 ? 'Settings — step 1 of 2: sites' : 'Settings — step 2 of 2: logins'}
+          </div>
+        </div>
+
+        {settingsStep === 1 && (
+          <div className="s1-intro">
+            <p>
+              👋 <b>Please set up your ScholarOne journals first.</b> We start
+              you with <b>ISR</b>, <b>Management Science</b>, and{' '}
+              <b>MIS Quarterly</b> — add more journals below if you need them.
+            </p>
+            <p>
+              <b>PCS</b> (e.g., ICIS) and <b>PaperFox</b> (e.g., CIST) are
+              already included for you — nothing to set up there.
+            </p>
+            <p>When you're ready, your logins come on the next page.</p>
+          </div>
+        )}
+
+        {settingsStep === 2 && (<>
         <div className="section">
-          <div className="s1-label">Journal sites</div>
+          <div className="s1-label">Logins</div>
+          <div className="muted-note" style={{ marginBottom: 8 }}>
+            Retrieve covers every system with a login below; leave one blank to
+            skip it. If your ScholarOne journals use different passwords, untick
+            the shared-login box to enter one per journal.
+            {vaultPresent ? ' Your saved login fills these automatically at retrieval.' : ''}
+          </div>
+
+          {/* ScholarOne — one account usually works across the journals. */}
+          <div className="s1-cred-block" data-site="scholarone">
+            <div className="s1-cred-site">ScholarOne (e.g., ISR, Management Science, MISQ)</div>
+            {enabledJournals.length > 1 && (
+              <label className="s1-check s1-samecreds">
+                <input
+                  type="checkbox"
+                  checked={sameCreds}
+                  onChange={(e) => update({ settings: { ...s, sameCreds: e.target.checked } })}
+                />
+                Use the same username &amp; password for every ScholarOne journal
+              </label>
+            )}
+            {enabledJournals.length === 0 ? (
+              <div className="muted-note">No journals enabled (see the list below).</div>
+            ) : sameCreds ? (
+              <>
+                <input
+                  className="s1-input"
+                  placeholder="Username"
+                  {...noAutofill}
+                  value={shared.username}
+                  onChange={(e) => setShared({ ...shared, username: e.target.value })}
+                />
+                <input
+                  className="s1-input"
+                  type="password"
+                  placeholder="Password"
+                  {...noAutofill}
+                  value={shared.password}
+                  onChange={(e) => setShared({ ...shared, password: e.target.value })}
+                />
+                <div className="s1-sites-note">
+                  For: {enabledJournals.map((x) => x.name || x.key).join(', ')}
+                </div>
+              </>
+            ) : (
+              enabledJournals.map((site) => (
+                <div key={site.key} style={{ marginBottom: 6 }}>
+                  <div className="s1-sites-note">{site.name || site.key}</div>
+                  <input
+                    className="s1-input"
+                    placeholder="Username"
+                    {...noAutofill}
+                    value={credFor(site.key).username}
+                    onChange={(e) => setCredFor(site.key, { username: e.target.value })}
+                  />
+                  <input
+                    className="s1-input"
+                    type="password"
+                    placeholder="Password"
+                    {...noAutofill}
+                    value={credFor(site.key).password}
+                    onChange={(e) => setCredFor(site.key, { password: e.target.value })}
+                  />
+                </div>
+              ))
+            )}
+          </div>
+
+          {/* PCS / PaperFox — single built-in portals, only a login needed. */}
+          {SYSTEMS.filter((sys) => sys.site).map((sys) => (
+            <div key={sys.id} className="s1-cred-block" data-site={sys.site.key}>
+              <div className="s1-cred-site">{sys.label} ({sys.hint})</div>
+              <input
+                className="s1-input"
+                placeholder="Username or email"
+                {...noAutofill}
+                value={credFor(sys.site.key).username}
+                onChange={(e) => setCredFor(sys.site.key, { username: e.target.value })}
+              />
+              <input
+                className="s1-input"
+                type="password"
+                placeholder="Password"
+                {...noAutofill}
+                value={credFor(sys.site.key).password}
+                onChange={(e) => setCredFor(sys.site.key, { password: e.target.value })}
+              />
+              <div className="s1-sites-note">{shortHost(sys.site.url)}</div>
+            </div>
+          ))}
+        </div>
+
+        <div className="section">
+          {/* Save-login (encrypted vault) opt-in lives here with the logins. */}
+          {vaultPresent ? (
+            <div className="s1-save-panel">
+              <div className="s1-lock-note">🔒 Login saved on this device — retrieving will use it.</div>
+              <button className="s1-forget" onClick={doForget}>Forget saved login</button>
+            </div>
+          ) : (
+            <>
+              <label className="s1-check">
+                <input
+                  type="checkbox"
+                  checked={saveOn}
+                  onChange={(e) => { setSaveOn(e.target.checked); if (!e.target.checked) setConsent(false) }}
+                />
+                Save my login on this device
+              </label>
+              {saveOn && (
+                <div className="s1-save-panel">
+                  <div className="s1-warn">
+                    ⚠ Your login will be encrypted with a master passphrase and stored only in this
+                    browser on your own disk — never on a server. We do our best to protect it, but no
+                    storage is perfectly safe: a breach of your device is always possible, and you
+                    accept that PerchBoard is not responsible for any resulting loss. The passphrase is
+                    never stored; if you forget it, the saved login can't be recovered (just re-enter
+                    and save again).
+                  </div>
+                  <label className="s1-check">
+                    <input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} />
+                    I understand and accept the risk
+                  </label>
+                  {consent && (
+                    <>
+                      <input
+                        className="s1-input"
+                        type="password"
+                        placeholder="Set a master passphrase (6+ characters)"
+                        {...noAutofill}
+                        value={passphrase}
+                        onChange={(e) => setPassphrase(e.target.value)}
+                      />
+                      <input
+                        className="s1-input"
+                        type="password"
+                        placeholder="Confirm master passphrase"
+                        {...noAutofill}
+                        value={pass2}
+                        onChange={(e) => setPass2(e.target.value)}
+                      />
+                      <div className="muted-note">The vault is written on your next successful retrieval.</div>
+                    </>
+                  )}
+                </div>
+              )}
+            </>
+          )}
+        </div>
+        </>)}
+
+        {settingsStep === 1 && (
+        <div className="section">
+          <div className="s1-label">ScholarOne journals</div>
           <div className="feed-edit-list">
-            {sites.map((site, i) => (
+            {journals.map((site, i) => (
               <div key={i} className="s1-site-edit">
                 <input
                   type="checkbox"
                   title="Include in retrieval"
                   checked={site.enabled !== false}
                   onChange={(e) => {
-                    const next = [...sites]
+                    const next = [...journals]
                     next[i] = { ...site, enabled: e.target.checked }
                     setSites(next)
                   }}
@@ -229,7 +482,7 @@ export default function ScholarOneWidget({ widget, onChange }) {
                     value={site.name}
                     placeholder="Journal name"
                     onChange={(e) => {
-                      const next = [...sites]
+                      const next = [...journals]
                       next[i] = { ...site, name: e.target.value }
                       setSites(next)
                     }}
@@ -239,7 +492,7 @@ export default function ScholarOneWidget({ widget, onChange }) {
                     value={site.url}
                     placeholder="https://mc.manuscriptcentral.com/…"
                     onChange={(e) => {
-                      const next = [...sites]
+                      const next = [...journals]
                       next[i] = { ...site, url: e.target.value }
                       setSites(next)
                     }}
@@ -247,8 +500,8 @@ export default function ScholarOneWidget({ widget, onChange }) {
                 </div>
                 <button
                   className="chip-x"
-                  title="Remove site"
-                  onClick={() => setSites(sites.filter((_, j) => j !== i))}
+                  title="Remove journal"
+                  onClick={() => setSites(journals.filter((_, j) => j !== i))}
                 >
                   ✕
                 </button>
@@ -259,15 +512,45 @@ export default function ScholarOneWidget({ widget, onChange }) {
             className="btn"
             style={{ marginTop: 8 }}
             onClick={() =>
-              setSites([...sites, { key: 's' + Date.now(), name: '', url: '', enabled: true }])
+              setSites([...journals, { key: 's' + Date.now(), name: '', url: '', system: 'scholarone', enabled: true }])
             }
           >
-            + Add site
+            + Add journal
           </button>
+          <div className="muted-note" style={{ marginTop: 8 }}>
+            PCS and PaperFox need no site setup — their portals are built in.
+          </div>
         </div>
-        <button className="btn primary" onClick={() => setShowSettings(false)}>
-          Done
-        </button>
+        )}
+
+        {settingsStep === 2 && vaultMsg && (
+          <div className="muted-note" style={{ marginTop: 6 }}>{vaultMsg}</div>
+        )}
+
+        {settingsStep === 2 && (
+          <div className="s1-privacy">
+            🔒 Credentials go only to your local PerchBoard to log in.{' '}
+            {saveOn || vaultPresent
+              ? 'Your saved login is encrypted on this device with your master passphrase.'
+              : 'They are kept in memory for this session only, unless you tick “Save my login”.'}
+          </div>
+        )}
+
+        <div className="s1-actions" style={{ marginTop: 10 }}>
+          {settingsStep === 1 ? (
+            <>
+              <button className="btn primary" onClick={() => setSettingsStep(2)}>
+                Next: logins →
+              </button>
+              <button className="btn" onClick={() => setShowSettings(false)}>Close</button>
+            </>
+          ) : (
+            <>
+              <button className="btn" onClick={() => setSettingsStep(1)}>← Back to sites</button>
+              <button className="btn primary" onClick={() => setShowSettings(false)}>Done</button>
+            </>
+          )}
+        </div>
       </div>
     )
   }
@@ -280,29 +563,31 @@ export default function ScholarOneWidget({ widget, onChange }) {
         <div className="s1-spinner" />
         <div className="s1-retrieving">Retrieving…</div>
         <div className="s1-sub">
-          Logging in to each journal site in the background. This can take up to a
-          minute.
+          Logging in to each configured site in the background. This can take up
+          to a minute.
         </div>
       </div>
     )
   }
 
-  // --- credential form ------------------------------------------------------
+  // --- pre-results screen ----------------------------------------------------
+  // Credentials live in ⚙ settings; this screen only unlocks (saved login) or
+  // fires the all-systems retrieval — plus a pointer to settings on first use.
 
   if (showForm) {
     // A saved login exists: ALWAYS ask for the master passphrase before a retrieval
     // (the passphrase is never cached for the session). Entering it retrieves right
-    // away. "Enter manually" allows a one-off login without touching the vault.
+    // away. "Use settings logins" allows a one-off retrieval without the vault.
     if (vaultPresent && !manual) {
       return (
         <div className="s1">
           <div className="s1-head">
             <div className="s1-title">Unlock saved login</div>
-            <button className="head-btn" onClick={() => setShowSettings(true)}>⚙</button>
+            <button className="head-btn" onClick={openSettings}>⚙</button>
           </div>
           <div className="s1-lock-note">
             🔒 Your login is saved and encrypted on this device. Enter your master
-            passphrase to retrieve your status.
+            passphrase to retrieve everything.
           </div>
           <input
             className="s1-input"
@@ -317,9 +602,11 @@ export default function ScholarOneWidget({ widget, onChange }) {
           {err && <div className="err-note" style={{ marginTop: 8 }}>{err}</div>}
           <div className="s1-actions">
             <button className="btn primary" onClick={doUnlock}>Unlock &amp; retrieve</button>
-            <button className="btn" onClick={() => { setManual(true); setSaveOn(false) }}>
-              Enter manually
-            </button>
+            {anyReady && (
+              <button className="btn" onClick={() => setManual(true)}>
+                Use settings logins
+              </button>
+            )}
           </div>
           {hasResults && (
             <button className="btn" style={{ marginTop: 8 }} onClick={() => setEditingCreds(false)}>
@@ -334,131 +621,43 @@ export default function ScholarOneWidget({ widget, onChange }) {
       <div className="s1">
         <div className="s1-head">
           <div className="s1-title">Retrieve paper &amp; review status</div>
-          <button className="head-btn" onClick={() => setShowSettings(true)}>
+          <button className="head-btn" onClick={openSettings}>
             ⚙
           </button>
         </div>
 
-        {!enabledSites.length && (
-          <div className="center-note">No sites enabled. Add one in settings (⚙).</div>
-        )}
-
-        <label className="s1-check s1-samecreds">
-          <input
-            type="checkbox"
-            checked={sameCreds}
-            onChange={(e) => update({ settings: { ...s, sameCreds: e.target.checked } })}
-          />
-          Use the same username &amp; password for every site
-        </label>
-
-        {sameCreds ? (
-          <div className="s1-cred-block">
-            <input
-              className="s1-input"
-              placeholder="Username"
-              {...noAutofill}
-              value={shared.username}
-              onChange={(e) => setShared({ ...shared, username: e.target.value })}
-            />
-            <input
-              className="s1-input"
-              type="password"
-              placeholder="Password"
-              {...noAutofill}
-              value={shared.password}
-              onChange={(e) => setShared({ ...shared, password: e.target.value })}
-              onKeyDown={(e) => e.key === 'Enter' && retrieve()}
-            />
-            <div className="s1-sites-note">
-              For: {enabledSites.map((x) => x.name || x.key).join(', ')}
-            </div>
-          </div>
-        ) : (
-          enabledSites.map((site) => (
-            <div key={site.key} className="s1-cred-block">
-              <div className="s1-cred-site">{site.name || site.key}</div>
-              <input
-                className="s1-input"
-                placeholder="Username"
-                {...noAutofill}
-                value={credFor(site.key).username}
-                onChange={(e) => setCredFor(site.key, { username: e.target.value })}
-              />
-              <input
-                className="s1-input"
-                type="password"
-                placeholder="Password"
-                {...noAutofill}
-                value={credFor(site.key).password}
-                onChange={(e) => setCredFor(site.key, { password: e.target.value })}
-              />
-            </div>
-          ))
-        )}
-
-        {/* Save-login controls (task 4). */}
-        {vaultPresent ? (
-          <div className="s1-save-panel">
-            <div className="s1-lock-note">🔒 Login saved on this device — retrieving will update it.</div>
-            <button className="s1-forget" onClick={doForget}>Forget saved login</button>
-          </div>
-        ) : (
+        {anyReady ? (
           <>
-            <label className="s1-check">
-              <input
-                type="checkbox"
-                checked={saveOn}
-                onChange={(e) => { setSaveOn(e.target.checked); if (!e.target.checked) setConsent(false) }}
-              />
-              Save my login on this device
-            </label>
-            {saveOn && (
-              <div className="s1-save-panel">
-                <div className="s1-warn">
-                  ⚠ Your login will be encrypted with a master passphrase and stored only in this
-                  browser on your own disk — never on a server. We do our best to protect it, but no
-                  storage is perfectly safe: a breach of your device is always possible, and you
-                  accept that PerchBoard is not responsible for any resulting loss. The passphrase is
-                  never stored; if you forget it, the saved login can't be recovered (just re-enter
-                  and save again).
-                </div>
-                <label className="s1-check">
-                  <input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} />
-                  I understand and accept the risk
-                </label>
-                {consent && (
-                  <>
-                    <input
-                      className="s1-input"
-                      type="password"
-                      placeholder="Set a master passphrase (6+ characters)"
-                      {...noAutofill}
-                      value={passphrase}
-                      onChange={(e) => setPassphrase(e.target.value)}
-                    />
-                    <input
-                      className="s1-input"
-                      type="password"
-                      placeholder="Confirm master passphrase"
-                      {...noAutofill}
-                      value={pass2}
-                      onChange={(e) => setPass2(e.target.value)}
-                    />
-                  </>
-                )}
-              </div>
-            )}
+            {/* Which systems this retrieval will cover, from the settings logins. */}
+            <div className="s1-lock-note">
+              One click retrieves everything that has a login in settings:
+            </div>
+            <div className="s1-sysready">
+              {SYSTEMS.map((sys) => (
+                <span key={sys.id} className={'s1-badge' + (systemReady(sys.id) ? '' : ' off')}>
+                  {systemReady(sys.id) ? '✓ ' : ''}{sys.label}{systemReady(sys.id) ? '' : ' — no login'}
+                </span>
+              ))}
+            </div>
           </>
+        ) : (
+          <div className="s1-lock-note">
+            👋 First time here? Open settings (⚙) and enter your logins for
+            ScholarOne (e.g., ISR, MISQ), PCS (e.g., ICIS), and/or PaperFox
+            (e.g., CIST) — leave blank any you don't use. You can also save
+            them encrypted behind a master passphrase. Then come back and
+            Retrieve.
+          </div>
         )}
 
-        {vaultMsg && <div className="muted-note" style={{ marginTop: 6 }}>{vaultMsg}</div>}
         {err && <div className="err-note" style={{ marginTop: 8 }}>{err}</div>}
 
         <div className="s1-actions">
-          <button className="btn primary" onClick={() => retrieve()} disabled={!enabledSites.length}>
-            Retrieve
-          </button>
+          {anyReady ? (
+            <button className="btn primary" onClick={() => retrieve()}>Retrieve</button>
+          ) : (
+            <button className="btn primary" onClick={openSettings}>Open settings</button>
+          )}
           {hasResults && (
             <button className="btn" onClick={() => setEditingCreds(false)}>
               Cancel
@@ -467,16 +666,22 @@ export default function ScholarOneWidget({ widget, onChange }) {
         </div>
 
         <div className="s1-privacy">
-          🔒 Credentials go only to your local PerchBoard to log in.{' '}
-          {saveOn
-            ? 'Your saved login is encrypted on this device with your master passphrase.'
-            : 'They are not stored unless you tick “Save my login” above.'}
+          🔒 Credentials go only to your local PerchBoard to log in. They are kept
+          in memory for this session only, unless saved encrypted in settings.
         </div>
       </div>
     )
   }
 
   // --- results --------------------------------------------------------------
+
+  // The system tabs only switch which retrieved system is being viewed.
+  const systemsWithResults = SYSTEMS.filter((sys) =>
+    allResults.some((r) => resultSystem(r) === sys.id))
+  const viewSysId = systemsWithResults.some((x) => x.id === activeSystem)
+    ? activeSystem
+    : (systemsWithResults[0] || {}).id
+  const viewResults = allResults.filter((r) => resultSystem(r) === viewSysId)
 
   return (
     <div className="s1">
@@ -485,42 +690,67 @@ export default function ScholarOneWidget({ widget, onChange }) {
         <div>
           <button
             className="head-btn"
-            title="Retrieve again"
+            title="Retrieve everything again"
             onClick={() => {
               setErr('')
               setVaultMsg('')
-              // Go to the form. For a saved login this is the passphrase prompt —
-              // required for every retrieval, not just once per session.
-              setEditingCreds(true)
+              // Refresh covers ALL configured systems. With this-session logins
+              // it fires straight away; a saved login goes through the
+              // passphrase prompt (required for every retrieval).
+              if (!vaultPresent && anyReady) retrieve()
+              else setEditingCreds(true)
             }}
           >
             ↻
           </button>
-          <button className="head-btn" onClick={() => setShowSettings(true)}>
+          <button className="head-btn" onClick={openSettings}>
             ⚙
           </button>
         </div>
       </div>
 
+      {/* Each system is its own page; this menu switches between them. Systems
+          that weren't part of a retrieval yet are listed but not selectable. */}
+      <div className="s1-mode-row">
+        <select
+          className="s1-mode-select"
+          title="Switch system"
+          value={viewSysId || ''}
+          onChange={(e) => setActiveSystem(e.target.value)}
+        >
+          {SYSTEMS.map((sys) => {
+            const has = systemsWithResults.some((x) => x.id === sys.id)
+            return (
+              <option key={sys.id} value={sys.id} disabled={!has}>
+                {sys.label}{has ? '' : ' — not retrieved'}
+              </option>
+            )
+          })}
+        </select>
+      </div>
+
       {(() => {
-        const active = results.find((r) => r.key === activeKey) || results[0]
+        const active = viewResults.find((r) => r.key === activeKey) || viewResults[0]
         if (!active) return null
         const cur = view[active.key] || 'papers'
         return (
           <div className="s1-results">
-            {/* One tab per journal. */}
-            <div className="s1-jtabs">
-              {results.map((r) => (
-                <button
-                  key={r.key}
-                  className={'s1-jtab' + (r.key === active.key ? ' active' : '')}
-                  onClick={() => setActiveKey(r.key)}
-                >
-                  {r.name || r.key}
-                  {r.error ? ' ⚠' : ''}
-                </button>
-              ))}
-            </div>
+            {/* One tab per journal — only ScholarOne has several sites; a
+                single-portal system needs no second tab row. */}
+            {viewResults.length > 1 && (
+              <div className="s1-jtabs">
+                {viewResults.map((r) => (
+                  <button
+                    key={r.key}
+                    className={'s1-jtab' + (r.key === active.key ? ' active' : '')}
+                    onClick={() => setActiveKey(r.key)}
+                  >
+                    {r.name || r.key}
+                    {r.error ? ' ⚠' : ''}
+                  </button>
+                ))}
+              </div>
+            )}
 
             <div className="s1-section">
               {active.error ? (
@@ -562,6 +792,15 @@ export default function ScholarOneWidget({ widget, onChange }) {
       )}
     </div>
   )
+}
+
+// shortHost trims a URL down to its bare hostname for display.
+function shortHost(u) {
+  try {
+    return new URL(u).hostname.replace(/^www\./, '')
+  } catch {
+    return u
+  }
 }
 
 // splitId separates a manuscript ID into the base (the part shared across
@@ -627,6 +866,7 @@ function PaperBlocks({ papers, note }) {
               <div className="s1-paper-row">
                 {p.id && <span className="s1-id">{p.id}</span>}
                 {p.status && <span className="s1-badge">{p.status}</span>}
+                {p.section && <span className="s1-badge">{p.section}</span>}
               </div>
               {p.editors && p.editors.length > 0 && (
                 <div className="s1-editors">{p.editors.join(' · ')}</div>
@@ -637,6 +877,18 @@ function PaperBlocks({ papers, note }) {
                   {p.created && <>Created {p.created}</>}
                   {p.submitted && <> · Submitted {p.submitted}</>}
                 </div>
+              )}
+              {/* PCS submissions carry a track/category and the round's deadline. */}
+              {(p.category || p.deadline) && (
+                <div className="s1-dates">
+                  {p.category}
+                  {p.category && p.deadline && ' · '}
+                  {p.deadline && <>Deadline {p.deadline}</>}
+                </div>
+              )}
+              {p.note && <div className="s1-dates">Note: {p.note}</div>}
+              {p.actions && p.actions.length > 0 && (
+                <div className="s1-dates">On the site: {p.actions.join(' · ')}</div>
               )}
             </div>
           ))}
