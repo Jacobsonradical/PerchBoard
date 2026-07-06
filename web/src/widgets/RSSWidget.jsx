@@ -9,7 +9,8 @@ import { toast } from '../lib/notify'
 //    the group if its title contains ANY of the words. The group's title is the
 //    section header (so several words can live under one custom title).
 //  - configurable length; the body scrolls within the fixed widget height
-//  - per-item "Ignore" removes it permanently (stored in state.ignored)
+//  - per-item "Ignore" removes it permanently (stored in state.ignored) after
+//    a 3-min undo grace period that survives reloads (state.pendingRemovals)
 //  - per-item "Save" moves it into the Saved tab (a "transform" of a live item
 //    into a saved one — same site + filter sections, just persisted)
 //  - notifications (toast + native) for newly-arrived items
@@ -62,20 +63,23 @@ export default function RSSWidget({ widget, onChange }) {
   const [tab, setTab] = useState(() => feeds[0]?.url || 'saved')
   // Active site sub-tab within Saved: 'all' or a saved site key.
   const [savedSite, setSavedSite] = useState('all')
-  // Guids of saved items in their "grace period" after the user clicked remove
-  // (3c). They stay in the list, shown as an undoable "removing…" row, and are
-  // only really dropped when the timer fires.
-  const [pendingRemove, setPendingRemove] = useState(() => new Set())
+  // Items in their "grace period" after the user clicked remove/ignore (3c).
+  // They stay in the list, shown as an undoable "removing…" row, and are only
+  // really dropped when the grace period expires. The pending entries live in
+  // widget.state (guid -> {kind, at}) — NOT in component memory — so a page
+  // refresh or closing the dashboard keeps the removal in effect: on reload the
+  // row comes back struck-through with Undo, and finalizes 3 min after the
+  // original click (immediately, if that moment already passed).
+  const pendingMap = st.pendingRemovals || {} // guid -> { kind: 'ignore'|'unsave', at: ms }
   const removeTimers = useRef(new Map()) // guid -> timeout id
-  const pendingKind = useRef(new Map())  // guid -> 'ignore' (live) | 'unsave' (saved)
   // Always-fresh refs so a timer that fires minutes later writes against the
   // latest widget/onChange (never a stale snapshot that could clobber other edits).
   const widgetRef = useRef(widget); widgetRef.current = widget
   const onChangeRef = useRef(onChange); onChangeRef.current = onChange
   const RESERVE_MS = 3 * 60 * 1000 // keep a removed item recoverable for 3 min
 
-  // Clear any outstanding grace timers if the widget unmounts. Anything still
-  // pending simply stays saved (nothing is lost).
+  // Clear any outstanding grace timers if the widget unmounts. The pending
+  // entries stay in widget.state, so they are picked up again on the next mount.
   useEffect(() => () => {
     for (const t of removeTimers.current.values()) clearTimeout(t)
   }, [])
@@ -123,41 +127,60 @@ export default function RSSWidget({ widget, onChange }) {
     ] } })
   }
   // Start a grace period instead of removing outright (3c) — applies to BOTH a
-  // live item's "Ignore" and a saved item's "Remove". The row is marked pending
-  // and shown as an undoable "removing…" strip; a timer finalizes it unless undone.
+  // live item's "Ignore" and a saved item's "Remove". The entry is written to
+  // widget.state immediately (so it survives refresh) and shown as an undoable
+  // "removing…" strip; the timer effect below finalizes it unless undone.
   //   kind 'ignore' -> live feed item (will be added to state.ignored)
   //   kind 'unsave' -> saved item    (will be dropped from state.saved)
   const scheduleRemove = (guid, kind) => {
-    pendingKind.current.set(guid, kind)
-    setPendingRemove((prev) => new Set(prev).add(guid))
-    const timers = removeTimers.current
-    if (timers.has(guid)) clearTimeout(timers.get(guid))
-    timers.set(guid, setTimeout(() => finalizeRemove(guid), RESERVE_MS))
+    patch({ state: { ...st, pendingRemovals: { ...pendingMap, [guid]: { kind, at: Date.now() } } } })
   }
   // Commit the removal once the grace period expires. Reads the latest
   // widget/onChange via refs so a timer firing minutes later can't overwrite
-  // unrelated changes made in the meantime.
+  // unrelated changes made in the meantime. The pending entry is cleared in the
+  // same write as the removal itself, so the two can never get out of sync.
   const finalizeRemove = (guid) => {
-    const kind = pendingKind.current.get(guid)
-    removeTimers.current.delete(guid)
-    pendingKind.current.delete(guid)
-    setPendingRemove((prev) => { const n = new Set(prev); n.delete(guid); return n })
+    const timers = removeTimers.current
+    if (timers.has(guid)) { clearTimeout(timers.get(guid)); timers.delete(guid) }
     const w = widgetRef.current
     const wst = w.state || {}
-    if (kind === 'unsave') {
-      onChangeRef.current({ ...w, state: { ...wst, saved: (wst.saved || []).filter((x) => x.guid !== guid) } })
+    const pend = { ...(wst.pendingRemovals || {}) }
+    const entry = pend[guid]
+    if (!entry) return // already undone (or finalized by another write)
+    delete pend[guid]
+    if (entry.kind === 'unsave') {
+      onChangeRef.current({ ...w, state: { ...wst, pendingRemovals: pend, saved: (wst.saved || []).filter((x) => x.guid !== guid) } })
     } else { // 'ignore'
-      if ((wst.ignored || []).includes(guid)) return
-      onChangeRef.current({ ...w, state: { ...wst, ignored: [...(wst.ignored || []), guid].slice(-1000) } })
+      const ignored = (wst.ignored || []).includes(guid)
+        ? wst.ignored
+        : [...(wst.ignored || []), guid].slice(-1000)
+      onChangeRef.current({ ...w, state: { ...wst, pendingRemovals: pend, ignored } })
     }
   }
   // Cancel a pending removal and keep the item.
   const undoRemove = (guid) => {
-    const timers = removeTimers.current
-    if (timers.has(guid)) { clearTimeout(timers.get(guid)); timers.delete(guid) }
-    pendingKind.current.delete(guid)
-    setPendingRemove((prev) => { const n = new Set(prev); n.delete(guid); return n })
+    const pend = { ...pendingMap }
+    delete pend[guid]
+    patch({ state: { ...st, pendingRemovals: pend } })
   }
+  // Keep a finalize timer alive for every pending entry. Because the entries
+  // are persisted with their click time, this also covers reload: an entry
+  // whose 3 minutes already elapsed while the page was closed gets a ~0ms
+  // timer and is finalized right away; a younger one waits out its remainder.
+  useEffect(() => {
+    const timers = removeTimers.current
+    for (const [guid, p] of Object.entries(pendingMap)) {
+      if (!timers.has(guid)) {
+        const left = Math.max(0, (p.at || 0) + RESERVE_MS - Date.now())
+        timers.set(guid, setTimeout(() => finalizeRemove(guid), left))
+      }
+    }
+    // Drop timers whose entry is gone (undone) so a stale timer can't re-remove.
+    for (const guid of [...timers.keys()]) {
+      if (!(guid in pendingMap)) { clearTimeout(timers.get(guid)); timers.delete(guid) }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [JSON.stringify(pendingMap)])
 
   // Notify on newly-seen items (5.4). Skip the very first population.
   const firstLoad = useRef(true)
@@ -296,7 +319,7 @@ export default function RSSWidget({ widget, onChange }) {
   // Tooltips use data-tip (custom CSS) instead of the native title, which the
   // browser often skips showing after a click or when the row shifts (3d).
   const liveRow = (it) => {
-    if (pendingRemove.has(it.guid)) return pendingRow(it)
+    if (pendingMap[it.guid]) return pendingRow(it)
     return (
       <li key={it.guid} className={'feed-item' + (read.has(it.guid) ? ' read' : '')}>
         <div style={{ flex: 1 }}>
@@ -313,7 +336,7 @@ export default function RSSWidget({ widget, onChange }) {
 
   // Saved item row: flat (never highlighted), with a grace-period remove (3c).
   const savedRow = (it) => {
-    if (pendingRemove.has(it.guid)) return pendingRow(it)
+    if (pendingMap[it.guid]) return pendingRow(it)
     return (
       <li key={it.guid} className="feed-item flat">
         <div style={{ flex: 1 }}>
