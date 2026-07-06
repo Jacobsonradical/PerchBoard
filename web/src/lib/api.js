@@ -23,11 +23,11 @@ export const api = {
   stockNews: (symbol) => getJSON(`/api/stocknews?symbol=${encodeURIComponent(symbol)}`),
   symbolSearch: (q) => getJSON(`/api/symbolsearch?q=${encodeURIComponent(q)}`),
 
-  // --- ScholarOne on-demand retrieval ---
-  // sites: [{ key, name, url, username, password }]. Credentials are sent once,
-  // used to fill the login form on the local server, and never stored.
-  scholarOne: async (sites) => {
-    const res = await fetch('/api/scholarone/retrieve', {
+  // --- paper tracker on-demand retrieval (ScholarOne, PCS, ...) ---
+  // sites: [{ key, name, url, system, username, password }]. Credentials are sent
+  // once, used to fill the login form on the local server, and never stored.
+  tracker: async (sites) => {
+    const res = await fetch('/api/tracker/retrieve', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ sites }),
