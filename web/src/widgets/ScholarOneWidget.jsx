@@ -646,26 +646,113 @@ function PaperBlocks({ papers, note }) {
   )
 }
 
-// ReviewList renders the Reviewer dashboard rows generically (column headers are
-// preserved as labels), or a fallback note.
+// daysUntil parses a ScholarOne due date ("14-Jul-2026") and returns the whole
+// days from today (negative = overdue), or null if the format is unexpected.
+function daysUntil(due) {
+  const m = (due || '').match(/^(\d{1,2})-([A-Za-z]{3})-(\d{4})$/)
+  if (!m) return null
+  const months = { jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5, jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11 }
+  const mon = months[m[2].toLowerCase()]
+  if (mon === undefined) return null
+  const d = new Date(Number(m[3]), mon, Number(m[1]))
+  return Math.round((d - new Date().setHours(0, 0, 0, 0)) / 86400000)
+}
+
+// ReviewRow renders one review. A row from the standard template is a card
+// like the paper blocks: title, ID, status + due-date badges, the handling
+// editors, the actions ScholarOne currently offers, and the abstract behind a
+// click-to-expand. A row from an unrecognized site layout still renders as
+// generic header→value lines. `done` suppresses the due-date urgency colors —
+// a submitted review's past due date isn't "overdue".
+function ReviewRow({ r, done }) {
+  // Fallback shape: labelled columns only.
+  if (!r.id && !r.title && !r.status && !r.dueDate) {
+    return (
+      <div className="s1-review">
+        {(r.columns || [])
+          .filter((c) => c.value)
+          .map((c, j) => (
+            <div key={j} className="s1-col">
+              {c.label && <span className="s1-col-label">{c.label}</span>}
+              <span className="s1-col-val">{c.value}</span>
+            </div>
+          ))}
+      </div>
+    )
+  }
+  const days = done ? null : daysUntil(r.dueDate)
+  const dueClass = days === null ? '' : days < 0 ? ' overdue' : days <= 7 ? ' warn' : ''
+  const dueNote =
+    days === null ? '' : days < 0 ? ` · ${-days}d overdue` : days === 0 ? ' · due today' : ` · ${days}d left`
+  return (
+    <div className="s1-review">
+      {r.title && <div className="s1-block-title">{r.title}</div>}
+      <div className="s1-paper-row">
+        {r.id && <span className="s1-id">{r.id}</span>}
+        {r.status && <span className="s1-badge">{r.status}</span>}
+        {r.dueDate && <span className={'s1-badge s1-due' + dueClass}>Due {r.dueDate}{dueNote}</span>}
+        {r.completed && <span className="s1-badge">Completed {r.completed}</span>}
+        {r.sent && <span className="s1-badge">Invited {r.sent}</span>}
+        {r.type && <span className="s1-badge">{r.type}</span>}
+      </div>
+      {r.editors && r.editors.length > 0 && <div className="s1-editors">{r.editors.join(' · ')}</div>}
+      {r.actions && r.actions.length > 0 && (
+        <div className="s1-dates">On the site: {r.actions.join(' · ')}</div>
+      )}
+      {/* Any labelled cells the parser didn't recognize (queue columns vary per site). */}
+      {r.columns && r.columns.length > 0 && r.columns.map((c, j) => (
+        <div key={j} className="s1-dates">{c.label}: {c.value}</div>
+      ))}
+      {r.abstract && (
+        <details className="s1-abstract">
+          <summary>Abstract</summary>
+          <p>{r.abstract}</p>
+        </details>
+      )}
+    </div>
+  )
+}
+
+// ReviewList shows all reviewer queues, grouped and in retrieval order:
+// the active "Review and Score" list first, then e.g. "Invitations", with
+// "Scores Submitted" (the completed-review history, often long) collapsed
+// behind a click-to-expand header. Results without queue names (older cached
+// retrievals) render as one flat list, as before.
 function ReviewList({ reviews, note }) {
   if (!reviews || !reviews.length) {
     return <div className="s1-empty">{note || 'No review information.'}</div>
   }
+  // Group by queue, preserving first-seen order.
+  const order = []
+  const byQueue = new Map()
+  for (const r of reviews) {
+    const q = r.queue || ''
+    if (!byQueue.has(q)) { byQueue.set(q, []); order.push(q) }
+    byQueue.get(q).push(r)
+  }
   return (
     <div className="s1-list">
-      {reviews.map((r, i) => (
-        <div key={i} className="s1-review">
-          {(r.columns || [])
-            .filter((c) => c.value)
-            .map((c, j) => (
-              <div key={j} className="s1-col">
-                {c.label && <span className="s1-col-label">{c.label}</span>}
-                <span className="s1-col-val">{c.value}</span>
-              </div>
-            ))}
-        </div>
-      ))}
+      {note && <div className="s1-empty">⚠ {note}</div>}
+      {order.map((q) => {
+        const items = byQueue.get(q)
+        const done = /submitted/i.test(q) // completed history: no urgency colors
+        const rows = items.map((r, i) => <ReviewRow key={r.id || i} r={r} done={done} />)
+        if (order.length === 1 && !q) return rows // legacy flat list
+        if (done) {
+          return (
+            <details key={q} className="s1-queue">
+              <summary className="s1-queue-head">{q || 'Reviews'} ({items.length})</summary>
+              {rows}
+            </details>
+          )
+        }
+        return (
+          <div key={q}>
+            <div className="s1-queue-head">{q || 'Reviews'} ({items.length})</div>
+            {rows}
+          </div>
+        )
+      })}
     </div>
   )
 }

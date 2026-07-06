@@ -54,16 +54,35 @@ type Paper struct {
 	Submitted        string   `json:"submitted"`
 }
 
-// ReviewCell is a single labelled value in a review row. The reviewer dashboard
-// columns vary slightly, so we keep them generic (label = column header).
+// ReviewCell is a single labelled value in a review row — the fallback shape
+// used when a site's reviewer queue doesn't carry the usual data-label cells.
 type ReviewCell struct {
 	Label string `json:"label"`
 	Value string `json:"value"`
 }
 
-// Review is one row from the Reviewer dashboard.
+// Review is one row from the Reviewer dashboard ("Manuscripts Awaiting Review"
+// queue). The standard ScholarOne template labels the cells (action / dueDate /
+// type / idTitle / status), which parses into the structured fields below; the
+// action dropdown additionally carries the paper's abstract and the actions
+// still open to the reviewer (e.g. "Continue Review"). Sites without those
+// labels fall back to the generic Columns list.
 type Review struct {
-	Columns []ReviewCell `json:"columns"`
+	Queue     string       `json:"queue,omitempty"` // sidebar list, e.g. "Review and Score", "Scores Submitted", "Invitations"
+	ID        string       `json:"id"`
+	Title     string       `json:"title"`
+	Type      string       `json:"type,omitempty"`      // e.g. "Research Article"
+	DueDate   string       `json:"dueDate,omitempty"`   // Review and Score queue, e.g. "14-Jul-2026"
+	Completed string       `json:"completed,omitempty"` // Scores Submitted queue
+	Sent      string       `json:"sent,omitempty"`      // Invitations queue (invite sent date)
+	Status    string       `json:"status,omitempty"`    // e.g. "Under Review"
+	Editors   []string     `json:"editors,omitempty"`   // "SE: …", "EIC: …", …
+	Actions   []string     `json:"actions,omitempty"`   // e.g. "Continue Review"
+	Abstract  string       `json:"abstract,omitempty"`
+	// Columns is the fallback for a row without the usual data-labels; on a
+	// structured row it instead carries any data-labelled cells we don't
+	// recognize, so an unexpected column still reaches the widget.
+	Columns []ReviewCell `json:"columns,omitempty"`
 }
 
 // SiteResult is everything we retrieved for one site. A site-level Error means
@@ -83,6 +102,7 @@ type SiteResult struct {
 var (
 	submitRe = regexp.MustCompile(`(?i)Submitting Author:\s*(.+?)(?:\s+Cover Letter\b.*)?$`)
 	wsRe     = regexp.MustCompile(`\s+`)
+	wordRe   = regexp.MustCompile(`[A-Za-z0-9]`) // tells a real label from a "———" separator
 )
 
 // Retrieve fetches all sites concurrently (each in its own browser) and returns
@@ -177,7 +197,9 @@ func retrieveSite(parent context.Context, c SiteCreds) SiteResult {
 	ctx, cancelCtx := chromedp.NewContext(allocCtx)
 	defer cancelCtx()
 	// A hard ceiling per site so one stuck journal can't hang the whole request.
-	ctx, cancelTimeout := context.WithTimeout(ctx, 2*time.Minute)
+	// (3 min, not 2: walking the extra reviewer queues — Scores Submitted,
+	// Invitations, possibly paginated — adds a few navigations per site.)
+	ctx, cancelTimeout := context.WithTimeout(ctx, 3*time.Minute)
 	defer cancelTimeout()
 
 	// Open the login page and submit the credentials.
@@ -212,6 +234,11 @@ func retrieveSite(parent context.Context, c SiteCreds) SiteResult {
 		"authorDashboardQueue", "Author Center", parsePapers)
 	res.Reviews, res.ReviewError = scrapeQueue(ctx, "REVIEWER_VIEW_MANUSCRIPTS",
 		"reviewerDashboardQueue", "Review Center", parseReviews)
+	// The Reviewer Center splits reviews across sidebar queues; the click above
+	// only lands on the default one ("Review and Score"). Pull the others too.
+	if res.ReviewError == "" {
+		res.Reviews, res.ReviewError = scrapeAllReviewQueues(ctx, res.Reviews)
+	}
 	return res
 }
 
@@ -273,6 +300,11 @@ func scrapeQueue[T any](ctx context.Context, nextPage, queueID, center string,
 	defer cancel()
 	var html string
 	err := chromedp.Run(sub,
+		// Stamp the outgoing page so the wait below can tell the next page from
+		// this one. Without it, markers that exist on BOTH dashboards (e.g. an
+		// empty author queue's NoResults cell while we head to the reviewer
+		// page) would satisfy the wait early and we'd scrape the stale page.
+		chromedp.Evaluate(`document.body && document.body.setAttribute('data-s1-stale','1')`, nil),
 		chromedp.Click(linkSel, chromedp.ByQuery),
 		waitForQueue(queueID),
 		chromedp.OuterHTML(`html`, &html, chromedp.ByQuery),
@@ -283,13 +315,18 @@ func scrapeQueue[T any](ctx context.Context, nextPage, queueID, center string,
 	return parse(html), ""
 }
 
-// waitForQueue waits until the queue table has rendered, or a "no submissions"
-// marker has, or a short budget elapses. It always returns nil so the caller
-// still captures the page (an empty queue is a valid, non-error outcome).
+// waitForQueue waits (on a fresh page — see the data-s1-stale stamp) until the
+// queue table has rendered, a "no submissions" marker has, or the dashboard
+// shell (#navigationDIV) is up — the last one covers dashboards that render NO
+// queue table at all, e.g. an Author Center with zero submissions lands on a
+// "Start New Submission" view. Gives up quietly after a short budget so the
+// caller still captures the page (an empty queue is a valid outcome).
 func waitForQueue(queueID string) chromedp.Action {
 	js := fmt.Sprintf(`(function(){
+		if (document.body && document.body.hasAttribute('data-s1-stale')) return false;
 		if (document.querySelector('#%s tbody tr')) return true;
-		return !!document.querySelector('[data-label="NoResults"]');
+		if (document.querySelector('[data-label="NoResults"]')) return true;
+		return !!document.querySelector('#navigationDIV');
 	})()`, queueID)
 	return chromedp.ActionFunc(func(ctx context.Context) error {
 		for i := 0; i < 45; i++ {
@@ -306,6 +343,172 @@ func waitForQueue(queueID string) chromedp.Action {
 			time.Sleep(700 * time.Millisecond)
 		}
 		return nil // give up waiting; the parser handles an empty/absent table
+	})
+}
+
+// reviewQueue is one entry in the Reviewer Center sidebar ("Scores Submitted",
+// "Invitations", "Review and Score - Fast Track", …) with the list id carried
+// by its javascript: link and the item count shown next to it ("36", "0", or
+// blank — Invitations carries no count).
+type reviewQueue struct {
+	Name  string `json:"name"`
+	List  string `json:"list"`
+	Count string `json:"count"`
+}
+
+// discoverQueuesJS lists the non-active Reviewer Center sidebar queues:
+// name (anchor text), list id (from the javascript: href), and the count shown
+// in the item's leading <span> ("36", "0", or "" — Invitations has no count).
+const discoverQueuesJS = `(function(){
+	var out = [];
+	document.querySelectorAll('#navigationDIV li').forEach(function(li){
+		var a = li.querySelector('a[href*="MS_LIST_TO_DISPLAY_FOR_REVIEWER"]');
+		if (!a) return;
+		var m = (a.getAttribute('href') || '').match(/MS_LIST_TO_DISPLAY_FOR_REVIEWER'\s*,\s*(\d+)/);
+		if (!m) return;
+		var s = li.querySelector('span');
+		out.push({
+			name: a.textContent.replace(/\s+/g,' ').trim(),
+			list: m[1],
+			count: s ? s.textContent.trim() : '',
+		});
+	});
+	return out;
+})()`
+
+// scrapeAllReviewQueues completes the review scrape. The rows already in hand
+// come from the default sidebar queue (usually "Review and Score"); tag them
+// with that queue's name, then visit every other sidebar queue — their links
+// re-render the same #reviewerDashboardQueue table in place — and append those
+// rows. Extra queues are best-effort: a failure reports which queue broke but
+// keeps everything collected so far.
+func scrapeAllReviewQueues(ctx context.Context, got []Review) ([]Review, string) {
+	// Name the default view from the sidebar's active item.
+	var active string
+	_ = chromedp.Run(ctx, chromedp.Evaluate(`(function(){
+		var a = document.querySelector('#navigationDIV li.active a');
+		return a ? a.textContent.replace(/\s+/g,' ').trim() : '';
+	})()`, &active))
+	if active == "" {
+		active = "In progress"
+	}
+	for i := range got {
+		got[i].Queue = active
+	}
+
+	// Discover the other queues from the sidebar links (the active queue's own
+	// entry has href="#", so it is naturally excluded). Each sidebar item also
+	// shows its count in a leading <span>; a literal "0" means the queue is
+	// empty and navigating there would be a wasted page load.
+	var queues []reviewQueue
+	_ = chromedp.Run(ctx, chromedp.Evaluate(discoverQueuesJS, &queues))
+
+	for _, q := range queues {
+		if q.Count == "0" {
+			continue // sidebar says it's empty — skip the navigation
+		}
+		rows, errNote := scrapeReviewQueuePages(ctx, q)
+		for i := range rows {
+			rows[i].Queue = q.Name
+		}
+		got = append(got, rows...)
+		if errNote != "" {
+			return got, "could not fully read the \"" + q.Name + "\" queue (" + errNote + ")"
+		}
+	}
+	return got, ""
+}
+
+// scrapeReviewQueuePages opens one sidebar queue and pages through it. Each
+// page load asks for 25 rows (the largest option in the site's own
+// items-per-page menu — an unlisted value might be rejected); the loop keeps
+// fetching pages until one brings nothing new or comes back shorter than the
+// 10-row minimum page size, meaning there is no next page.
+func scrapeReviewQueuePages(ctx context.Context, q reviewQueue) ([]Review, string) {
+	var all []Review
+	seen := map[string]bool{}
+	for page := 0; page < 10; page++ {
+		rows, errNote := loadReviewQueuePage(ctx, q.List, page)
+		if errNote != "" {
+			return all, errNote
+		}
+		fresh := 0
+		for _, r := range rows {
+			if r.ID != "" && seen[r.ID] {
+				continue // overlap with a previous page
+			}
+			if r.ID != "" {
+				seen[r.ID] = true
+			}
+			all = append(all, r)
+			fresh++
+		}
+		if fresh == 0 || len(rows) < 10 {
+			break
+		}
+	}
+	return all, ""
+}
+
+// loadReviewQueuePage navigates to one page of one reviewer queue and parses
+// it. The sidebar links drive the site's own setField/setDataAndNextPage form
+// machinery; we mark the current queue table stale before triggering it so the
+// wait can tell the re-rendered table from the one being replaced.
+func loadReviewQueuePage(ctx context.Context, list string, page int) ([]Review, string) {
+	nav := fmt.Sprintf(`(function(){
+		if (typeof setField !== 'function' || typeof setDataAndNextPage !== 'function') return false;
+		if (document.body) document.body.setAttribute('data-s1-stale', '1');
+		setField('DATATABLE_CURRENT_PAGE_REVIEWER_CENTER', %d);
+		setField('DATATABLE_PAGE_LENGTH_REVIEWER_CENTER', 25);
+		setDataAndNextPage('MS_LIST_TO_DISPLAY_FOR_REVIEWER', %s, 'REVIEWER_VIEW_MANUSCRIPTS');
+		return true;
+	})()`, page, list)
+
+	sub, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	var okNav bool
+	if err := chromedp.Run(sub, chromedp.Evaluate(nav, &okNav)); err != nil {
+		return nil, cleanErr(err)
+	}
+	if !okNav {
+		return nil, "queue navigation is not available on this page"
+	}
+	var html string
+	if err := chromedp.Run(sub,
+		waitForFreshQueue(),
+		chromedp.OuterHTML(`html`, &html, chromedp.ByQuery),
+	); err != nil {
+		return nil, cleanErr(err)
+	}
+	return parseReviews(html), ""
+}
+
+// waitForFreshQueue waits for the queue table to be re-rendered after a
+// sidebar-queue navigation. The queue views re-render the SAME table id in
+// place, so the outgoing page's body was stamped data-s1-stale just before
+// navigating; "fresh" means an un-stamped page whose table has rendered (an
+// empty queue still renders the table, with its NoResults row).
+func waitForFreshQueue() chromedp.Action {
+	const js = `(function(){
+		if (document.body && document.body.hasAttribute('data-s1-stale')) return false;
+		var t = document.querySelector('#reviewerDashboardQueue');
+		return !!(t && t.querySelector('tbody tr'));
+	})()`
+	return chromedp.ActionFunc(func(ctx context.Context) error {
+		for i := 0; i < 40; i++ {
+			var ready bool
+			sub, cancel := context.WithTimeout(ctx, 3*time.Second)
+			err := chromedp.Run(sub, chromedp.Evaluate(js, &ready))
+			cancel()
+			if err == nil && ready {
+				return nil
+			}
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			time.Sleep(700 * time.Millisecond)
+		}
+		return fmt.Errorf("the queue did not load in time")
 	})
 }
 
@@ -351,8 +554,11 @@ func parsePapers(html string) []Paper {
 	return papers
 }
 
-// parseReviews reads the Reviewer dashboard queue. Columns differ per site, so
-// each cell is paired with its header label and kept generic.
+// parseReviews reads the Reviewer dashboard queue. The standard ScholarOne
+// template labels every cell with data-label (action/dueDate/type/idTitle/
+// status), which parses into the structured Review fields; a row without those
+// labels is kept generically as header→value columns so an unusual site still
+// shows something.
 func parseReviews(html string) []Review {
 	doc, err := goquery.NewDocumentFromReader(strings.NewReader(html))
 	if err != nil {
@@ -371,6 +577,16 @@ func parseReviews(html string) []Review {
 		if tr.Find(`[data-label="NoResults"]`).Length() > 0 {
 			return // the "There are no submissions in this queue" row
 		}
+		// Standard template → structured row.
+		idTitle := tr.Find(`td[data-label="idTitle"]`)
+		statusCell := tr.Find(`td[data-label="status"]`)
+		if idTitle.Length() > 0 || statusCell.Length() > 0 {
+			if r, ok := parseReviewRow(tr, idTitle, statusCell); ok {
+				reviews = append(reviews, r)
+			}
+			return
+		}
+		// Fallback: unknown layout, keep each cell with its column header.
 		var cells []string
 		tr.Find("td").Each(func(_ int, td *goquery.Selection) {
 			cells = append(cells, clean(td.Text()))
@@ -399,6 +615,93 @@ func parseReviews(html string) []Review {
 		reviews = append(reviews, Review{Columns: cols})
 	})
 	return reviews
+}
+
+// parseReviewRow extracts one structured review from a data-labelled row.
+func parseReviewRow(tr, idTitle, statusCell *goquery.Selection) (Review, bool) {
+	var r Review
+
+	// The ID/Title cell stacks two <p>s: manuscript number, then the title.
+	var ps []string
+	idTitle.Find("p").Each(func(_ int, p *goquery.Selection) {
+		if t := clean(p.Text()); t != "" {
+			ps = append(ps, t)
+		}
+	})
+	if len(ps) > 0 {
+		r.ID = ps[0]
+	}
+	if len(ps) > 1 {
+		r.Title = strings.Join(ps[1:], " ")
+	}
+
+	r.DueDate = clean(tr.Find(`td[data-label="dueDate"]`).Text())
+	r.Type = clean(tr.Find(`td[data-label="type"]`).Text())
+	r.Completed = clean(tr.Find(`td[data-label="completed"]`).Text()) // Scores Submitted
+	r.Sent = clean(tr.Find(`td[data-label="sent"]`).Text())           // Invitations
+
+	// Keep any labelled cell we don't know about (queues differ per site) so an
+	// unexpected column still shows up in the widget instead of vanishing.
+	known := map[string]bool{"action": true, "dueDate": true, "type": true,
+		"idTitle": true, "status": true, "completed": true, "sent": true}
+	tr.Find(`td[data-label]`).Each(func(_ int, td *goquery.Selection) {
+		label, _ := td.Attr("data-label")
+		if known[label] || label == "NoResults" {
+			return
+		}
+		if v := clean(td.Text()); v != "" {
+			r.Columns = append(r.Columns, ReviewCell{Label: label, Value: v})
+		}
+	})
+
+	// Status cell: the first <p> is the queue status ("Under Review", …); the
+	// following <p>s — minus the "Assignments:" heading — are the handling
+	// editors (SE/EIC/ME…), same people the Author page shows in <nobr>s.
+	var lines []string
+	statusCell.Find("p").Each(func(_ int, p *goquery.Selection) {
+		if t := clean(p.Text()); t != "" {
+			lines = append(lines, t)
+		}
+	})
+	if len(lines) > 0 {
+		r.Status = lines[0]
+		for _, l := range lines[1:] {
+			if strings.EqualFold(strings.TrimSuffix(l, ":"), "assignments") {
+				continue
+			}
+			r.Editors = append(r.Editors, l)
+		}
+	}
+
+	// The Action dropdown: each real option is something the reviewer can still
+	// do ("Continue Review", "View Proof", …) and carries the manuscript number,
+	// title and abstract as data attributes — used as fallbacks and for display.
+	tr.Find(`td[data-label="action"] option`).Each(func(_ int, o *goquery.Selection) {
+		if r.Abstract == "" {
+			if a, _ := o.Attr("data-abstract"); clean(a) != "" {
+				r.Abstract = clean(a)
+			}
+		}
+		if r.ID == "" {
+			if v, _ := o.Attr("data-documentno"); clean(v) != "" {
+				r.ID = clean(v)
+			}
+		}
+		if r.Title == "" {
+			if v, _ := o.Attr("data-title"); clean(v) != "" {
+				r.Title = clean(v)
+			}
+		}
+		t := clean(o.Text())
+		// Skip the placeholder and the "——————" separator options.
+		if t == "" || strings.EqualFold(t, "Select...") || !wordRe.MatchString(t) {
+			return
+		}
+		r.Actions = append(r.Actions, t)
+	})
+
+	ok := r.ID != "" || r.Title != "" || r.Status != "" || r.DueDate != ""
+	return r, ok
 }
 
 // firstText returns the first non-empty direct text node of a selection — used
