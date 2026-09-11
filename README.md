@@ -222,6 +222,18 @@ Your settings are saved to `~/.config/perchboard/` (override with the
   splits the feed into an `AI` category and `Other` by title; categories collapse.
   Set the max length, click ✕ to permanently ignore an item, read items dim, and
   new items raise a notification.
+- **RSS article opening** — each feed has independent **Archive.today** and
+  **PerchBoard reader** checkboxes, available when adding or editing a feed.
+  Leave both off to open the original website. Enable both to try PerchBoard
+  first and open Archive.today directly in your browser if extraction fails.
+  A separate reading page names the active service and announces the handoff
+  before leaving PerchBoard. Archive.today is not fetched through our server;
+  its page shows the available snapshot or its own error, and PerchBoard cannot
+  verify that result across sites. This also applies to Saved articles.
+  PerchBoard preserves available headings, images, captions, lists, quotations,
+  links, author and date in a readable article layout. It extracts content
+  returned by the publisher and cannot guarantee a complete article. Original
+  links remain available. Article content is not saved to the dashboard.
 - **Weather** — auto-detects your location (or search a place); shows the current
   temperature in both °C and °F, an hourly strip, and a past+future daily forecast
   with wind, rain %, and sunrise/sunset.

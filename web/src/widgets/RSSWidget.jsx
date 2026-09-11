@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react'
 import { usePoll } from '../lib/usePoll'
 import { api } from '../lib/api'
 import { toast } from '../lib/notify'
+import { normFeed, articleLink } from '../lib/articleLink'
 
 // RSSWidget features:
 //  - one tab per site (feed), with an editable tab/site name
@@ -35,8 +36,6 @@ const splitWords = (v) => v.split(',').map((w) => w.trim()).filter(Boolean)
 // Older configs stored feeds as plain URL strings and filters as plain words.
 // Normalize both to the richer shape the UI now uses so old saved configs keep
 // working; the next save rewrites them in the new form.
-const normFeed = (f) =>
-  typeof f === 'string' ? { url: f, name: '' } : { url: f.url, name: f.name || '' }
 const normFilter = (f) =>
   typeof f === 'string' ? { title: f, words: [f] } : { title: f.title || '', words: f.words || [] }
 
@@ -323,7 +322,7 @@ export default function RSSWidget({ widget, onChange }) {
     return (
       <li key={it.guid} className={'feed-item' + (read.has(it.guid) ? ' read' : '')}>
         <div style={{ flex: 1 }}>
-          <a href={it.link} target="_blank" rel="noreferrer" onClick={() => markRead(it.guid)}>{it.title}</a>
+          <a href={articleLink(it, feeds, sourceToFeedUrl)} target="_blank" rel="noreferrer" onClick={() => markRead(it.guid)}>{it.title}</a>
           <div className="meta">{it.source} · {timeAgo(it.published)}</div>
         </div>
         <div className="feed-actions">
@@ -340,7 +339,7 @@ export default function RSSWidget({ widget, onChange }) {
     return (
       <li key={it.guid} className="feed-item flat">
         <div style={{ flex: 1 }}>
-          <a href={it.link} target="_blank" rel="noreferrer" onClick={() => markRead(it.guid)}>{it.title}</a>
+          <a href={articleLink(it, feeds, sourceToFeedUrl)} target="_blank" rel="noreferrer" onClick={() => markRead(it.guid)}>{it.title}</a>
           <div className="meta">{it.source} · {timeAgo(it.published)}</div>
         </div>
         <div className="feed-actions">
@@ -483,6 +482,7 @@ function categorize(items, filters, smart) {
 function RSSSettings({ widget, feeds, filters, setSettings, done }) {
   const s = widget.settings
   const [feed, setFeed] = useState('')
+  const [reading, setReading] = useState({ readerLocal: false, readerArchive: false })
   const [ftitle, setFtitle] = useState('')
   const [fwords, setFwords] = useState('')
 
@@ -491,7 +491,7 @@ function RSSSettings({ widget, feeds, filters, setSettings, done }) {
 
   const addFeed = () => {
     const u = feed.trim()
-    if (u && !feeds.some((f) => f.url === u)) writeFeeds([...feeds, { url: u, name: '' }])
+    if (u && !feeds.some((f) => f.url === u)) writeFeeds([...feeds, { url: u, name: '', ...reading }])
     setFeed('')
   }
   const renameFeed = (i, name) => writeFeeds(feeds.map((f, j) => (j === i ? { ...f, name } : f)))
@@ -513,7 +513,8 @@ function RSSSettings({ widget, feeds, filters, setSettings, done }) {
         <label>Feeds & tab names</label>
         <div className="feed-edit-list">
           {feeds.map((f, i) => (
-            <div className="feed-edit-row" key={f.url}>
+            <div className="feed-edit-card" key={f.url}>
+            <div className="feed-edit-row">
               <input
                 className="feed-name-input"
                 value={f.name}
@@ -523,6 +524,8 @@ function RSSSettings({ widget, feeds, filters, setSettings, done }) {
               <span className="feed-url" title={f.url}>{shortUrl(f.url)}</span>
               <button className="chip-x" title="Remove feed" onClick={() => removeFeed(i)}>✕</button>
             </div>
+            <ReadingOptions value={f} onChange={(patch) => writeFeeds(feeds.map((item, j) => j === i ? { ...item, ...patch } : item))} />
+            </div>
           ))}
           {feeds.length === 0 && <span className="muted-note">none yet</span>}
         </div>
@@ -530,6 +533,8 @@ function RSSSettings({ widget, feeds, filters, setSettings, done }) {
           <input value={feed} onChange={(e) => setFeed(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && addFeed()} placeholder="https://example.com/feed.xml" />
           <button className="btn primary" onClick={addFeed}>Add</button>
         </div>
+        <ReadingOptions value={reading} onChange={(patch) => setReading({ ...reading, ...patch })} />
+        <div className="muted-note">Choose how titles open for each feed, including Saved. With neither checked, titles open the original website. PerchBoard extracts available text; a full article is not guaranteed. Archive.today opens directly in your browser, using existing snapshots; it may require verification.</div>
       </div>
 
       <div className="section">
@@ -584,4 +589,16 @@ function RSSSettings({ widget, feeds, filters, setSettings, done }) {
       <button className="btn primary" onClick={done}>Done</button>
     </div>
   )
+}
+
+function ReadingOptions({ value, onChange }) {
+  return <div>
+    <div className="feed-reading-options">
+      <label><input type="checkbox" checked={!!value.readerArchive} onChange={(e) => onChange({ readerArchive: e.target.checked })} />Archive.today</label>
+      <label><input type="checkbox" checked={!!value.readerLocal} onChange={(e) => onChange({ readerLocal: e.target.checked })} />PerchBoard reader</label>
+    </div>
+    <div className="muted-note">{value.readerLocal && value.readerArchive
+      ? 'PerchBoard first → open Archive.today in your browser if extraction fails.'
+      : value.readerLocal ? 'Use PerchBoard reader.' : value.readerArchive ? 'Use Archive.today.' : 'Default: open original website.'}</div>
+  </div>
 }

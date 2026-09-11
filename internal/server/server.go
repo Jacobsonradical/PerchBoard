@@ -58,6 +58,7 @@ func (s *Server) Handler() http.Handler {
 
 	// --- data APIs (all key-free upstreams) ---
 	mux.HandleFunc("/api/rss", s.handleRSS)
+	mux.HandleFunc("/api/reader", s.handleReader)
 	mux.HandleFunc("/api/hn", s.handleHN)
 	mux.HandleFunc("/api/weather", s.handleWeather)
 	mux.HandleFunc("/api/geo", s.handleGeo)

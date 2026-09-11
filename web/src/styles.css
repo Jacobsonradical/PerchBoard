@@ -520,3 +520,58 @@ input[type="file"] { border: none; background: none; padding: 0; font-size: 12px
 
 .s1-footer { margin-top: 8px; color: var(--fg-dim); font-size: 11px; text-align: right; }
 .s1-samecreds { margin-bottom: 10px; font-size: 12px; color: var(--fg-dim); }
+
+/* Per-feed article opening and the standalone reading page. */
+.feed-edit-card { padding: 8px 0; border-bottom: 1px solid var(--fill); }
+.feed-reading-options { display: flex; flex-wrap: wrap; gap: 8px 16px; margin: 8px 0; }
+.feed-reading-options label { display: flex; align-items: center; gap: 6px; font-size: 12px; }
+/* Article pages use their own paper palette, independent of dashboard photos. */
+body.reader-page { background: #f9f8f5; color: #242320; }
+.article-reader { max-width: 1120px; margin: 0 auto; padding: 0 36px 64px; }
+.article-reader a { color: inherit; text-decoration: underline; text-underline-offset: 3px; }
+.article-reader a:hover { color: #72583b; }
+.reader-toolbar { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 22px 0; font-size: 12px; border-bottom: 1px solid #ccc8c0; }
+.reader-toolbar div { display: flex; flex-wrap: wrap; gap: 20px; }
+.reader-toolbar a { text-decoration: none; }
+.reader-masthead { text-align: center; padding: 28px 0 24px; font-size: clamp(22px, 4vw, 38px); font-weight: 800; letter-spacing: .08em; text-transform: uppercase; border-bottom: 3px solid #242320; }
+.reader-status { max-width: 820px; margin: 24px auto; font: 12px/1.6 var(--font); color: #64615a; overflow-wrap: anywhere; }
+.reader-status p { margin: 4px 0; }
+.reader-success { color: #46614d; }
+.reader-header { max-width: 820px; margin: 30px auto 32px; }
+.reader-header h1 { font-family: Georgia, 'Times New Roman', serif; font-size: clamp(34px, 5vw, 60px); font-weight: 700; line-height: 1.08; letter-spacing: -.035em; margin: 0 0 24px; overflow-wrap: anywhere; }
+.reader-deck { font-family: Georgia, 'Times New Roman', serif; font-size: clamp(19px, 2.5vw, 24px); line-height: 1.5; color: #615d55; margin: 0 0 26px; }
+.reader-byline { display: flex; flex-wrap: wrap; gap: 8px 24px; font-size: 12px; line-height: 1.6; padding-top: 18px; border-top: 1px solid #d8d4cc; }
+.reader-byline span { font-weight: 600; }
+.reader-byline time { color: #706b62; }
+.reader-hero { margin: 0 0 44px; }
+.article-reader img { display: block; max-width: 100%; height: auto; margin: 0 auto; }
+.article-reader img[hidden] { display: none; }
+.reader-hero img { width: 100%; }
+.reader-body { max-width: 700px; margin: 0 auto; font-family: Georgia, 'Times New Roman', serif; font-size: 20px; line-height: 1.8; overflow-wrap: anywhere; }
+.reader-body p { margin: 0 0 1.3em; }
+.reader-body h2, .reader-body h3, .reader-body h4 { font-family: var(--font); line-height: 1.25; margin: 1.8em 0 .7em; letter-spacing: -.02em; }
+.reader-body h2 { font-size: 30px; }
+.reader-body h3 { font-size: 24px; }
+.reader-body blockquote { margin: 32px 0; padding: 2px 0 2px 24px; border-left: 3px solid #a59781; font-style: italic; color: #575043; }
+.reader-body blockquote p:last-child { margin-bottom: 0; }
+.reader-body ul, .reader-body ol { padding-left: 1.5em; margin: 0 0 1.4em; }
+.reader-body li { margin: .4em 0; }
+.reader-body figure { margin: 32px 0; }
+.reader-body figure:empty { display: none; }
+.reader-body figcaption { font: 12px/1.5 var(--font); color: #726b5f; padding: 10px 0; }
+.reader-body pre { overflow-x: auto; padding: 18px; background: #eeece6; font-size: 14px; line-height: 1.6; }
+.reader-body code { font-size: .85em; }
+.reader-table { overflow-x: auto; margin: 24px 0; }
+.reader-table table { border-collapse: collapse; font-size: 16px; width: 100%; }
+.reader-table th, .reader-table td { padding: 10px; border: 1px solid #ccc8c0; text-align: left; }
+.reader-footer, .reader-unavailable { max-width: 700px; margin: 48px auto 0; border-top: 1px solid #d8d4cc; padding-top: 20px; color: #726b5f; font: 12px/1.7 var(--font); }
+@media (max-width: 600px) {
+  .article-reader { padding: 0 20px 40px; }
+  .reader-toolbar { align-items: flex-start; font-size: 11px; }
+  .reader-toolbar div { justify-content: flex-end; gap: 8px; }
+  .reader-header { margin-top: 24px; }
+  .reader-body { font-size: 18px; line-height: 1.75; }
+  .reader-hero { margin: 0 -20px 32px; }
+}
+.reader-handoff { max-width: 820px; margin: 24px auto; padding: 20px; background: #eeece6; color: #615d55; font-size: 13px; line-height: 1.7; }
+.reader-handoff a { display: inline-block; margin-bottom: 8px; font-weight: 600; color: #242320; }
