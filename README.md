@@ -27,7 +27,7 @@ expanded Markets view with an intraday chart, key stats, and related news:
 
 There are two ways to run PerchBoard. Pick one:
 
-- **Option A — Docker** (recommended): one command, runs anywhere, auto-starts on
+- **Option A — Docker** (recommended): quick setup, runs anywhere, auto-starts on
   reboot. Best if you just want to *use* it.
 - **Option B — Standalone**: build it from source and run the binary directly.
   Best if you want to hack on it or don't want Docker.
@@ -50,10 +50,14 @@ Both serve the dashboard at **http://localhost:7171**.
 
 ### Step 2 — Make sure Docker is running
 
+The shell examples below use `sudo` for Docker commands on Linux. With Docker
+Desktop on Windows or macOS, omit `sudo`. Run commands one line at a time;
+if a step fails, resolve it before continuing.
+
 Run:
 
 ```bash
-docker info
+sudo docker info
 ```
 
 - If you see a **`Server:`** section with details → Docker is running. ✅
@@ -61,54 +65,45 @@ docker info
   - Windows/macOS: open the **Docker Desktop** app and wait for "running".
   - Linux: `sudo systemctl enable --now docker` (this also makes it start on boot).
 
-> **About `sudo` (Linux):** if `docker` commands say *"permission denied"*, you
-> have two choices:
-> 1. **Prefix every command with `sudo`** (e.g. `sudo docker compose up -d`), or
-> 2. **Add yourself to the docker group once** so you never need `sudo`:
->    ```bash
->    sudo usermod -aG docker $USER
->    newgrp docker        # or just log out and back in
->    ```
-> All commands below work with or without `sudo` — add it if needed.
-
 ### Step 3 — Start PerchBoard
 
 **Easiest (uses the prebuilt image — no download of source code):**
 
 ```bash
-mkdir -p ~/perchboard && cd ~/perchboard
+mkdir -p ~/perchboard
+cd ~/perchboard
 curl -sL https://raw.githubusercontent.com/Jacobsonradical/PerchBoard/main/docker-compose.yml -o docker-compose.yml
-docker compose up -d
+sudo docker compose up -d
 ```
 
 That makes a folder `~/perchboard`, drops a `docker-compose.yml` into it, and
 starts the container in the background.
 
-> **On Windows:** the commands above work as-is in a **WSL 2** shell or **Git
-> Bash**. In native **PowerShell**, use these equivalents:
+> **On Windows with Docker Desktop:** use these commands in native
+> **PowerShell** without `sudo`:
 >
 > ```powershell
-> mkdir $HOME\perchboard; cd $HOME\perchboard
+> mkdir $HOME\perchboard
+> cd $HOME\perchboard
 > curl.exe -sL https://raw.githubusercontent.com/Jacobsonradical/PerchBoard/main/docker-compose.yml -o docker-compose.yml
 > docker compose up -d
 > ```
 >
 > (`curl.exe` is the real curl bundled with Windows 10/11 — plain `curl` in
 > PowerShell is an alias for a different command, so the `.exe` matters here.)
-> Everything after this — `docker ps`, `logs`, `compose pull`, etc. — is the same
-> on every platform.
+> For the management and update commands below, also omit `sudo` when using
+> Docker Desktop on Windows or macOS.
 
 **Or build it yourself from source** (if the prebuilt image isn't available):
 
 ```bash
 git clone https://github.com/Jacobsonradical/PerchBoard.git
 cd PerchBoard
-docker build -t perchboard:latest .
-docker run -d --name perchboard --restart unless-stopped \
-  -p 127.0.0.1:7171:7171 -v perchboard-data:/data perchboard:latest
+sudo docker build -t perchboard:latest .
+sudo docker run -d --name perchboard --restart unless-stopped -p 127.0.0.1:7171:7171 -v perchboard-data:/data perchboard:latest
 ```
 
-What the `docker run` flags mean:
+What the `sudo docker run` flags mean:
 - `-d` — run in the background.
 - `--name perchboard` — name it so it's easy to manage.
 - `--restart unless-stopped` — **auto-start on every reboot** (see below).
@@ -127,11 +122,11 @@ Go to **http://localhost:7171** in your browser.
 ### Managing it
 
 ```bash
-docker ps                     # is it running? look for "perchboard"
-docker logs -f perchboard     # view logs (Ctrl+C to stop watching)
-docker stop perchboard        # stop
-docker start perchboard       # start again
-docker rm -f perchboard       # remove the container (your data stays in the volume)
+sudo docker ps                  # is it running? look for "perchboard"
+sudo docker logs -f perchboard   # view logs (Ctrl+C to stop watching)
+sudo docker stop perchboard      # stop
+sudo docker start perchboard     # start again
+sudo docker rm -f perchboard     # remove the container (your data stays in the volume)
 ```
 
 ### Auto-start on reboot
@@ -140,21 +135,24 @@ Two things make this work, and both are already handled above:
 1. The Docker service starts on boot — `sudo systemctl enable --now docker` (Linux),
    or enable "Start Docker Desktop when you log in" in Docker Desktop settings.
 2. The container has a restart policy — `--restart unless-stopped` (the
-   `docker run` above) or `restart: unless-stopped` (the compose file).
+   `sudo docker run` above) or `restart: unless-stopped` (the compose file).
 
-After a reboot, check with `docker ps` — it should already be `Up`.
+After a reboot, check with `sudo docker ps` — it should already be `Up`.
 
 ### Updating later
 
 ```bash
 # prebuilt-image method:
-cd ~/perchboard && docker compose pull && docker compose up -d
+cd ~/perchboard
+sudo docker compose pull
+sudo docker compose up -d
 
 # from-source method:
-cd PerchBoard && git pull && docker build -t perchboard:latest . \
-  && docker rm -f perchboard \
-  && docker run -d --name perchboard --restart unless-stopped \
-     -p 127.0.0.1:7171:7171 -v perchboard-data:/data perchboard:latest
+cd PerchBoard
+git pull
+sudo docker build -t perchboard:latest .
+sudo docker rm -f perchboard
+sudo docker run -d --name perchboard --restart unless-stopped -p 127.0.0.1:7171:7171 -v perchboard-data:/data perchboard:latest
 ```
 
 Your config and backgrounds live in the `perchboard-data` volume, so they
