@@ -32,3 +32,17 @@ test('legacy saves resolve by source and removed feeds use original', () => {
 test('reject unsafe article links', () => {
   for (const link of ['javascript:alert(1)', 'data:text/html,x', 'https://u:p@example.com', 'invalid']) assert.equal(articleLink({ link }, []), undefined)
 })
+
+test('summary opt-in opens the reader independently of reading and filtering settings', () => {
+  for (const readerLocal of [false, true]) for (const readerArchive of [false, true]) {
+    const feed = normFeed({ url: 'rss', aiSummary: true, readerLocal, readerArchive })
+    const item = { link: 'https://example.com/story', feedUrl: 'rss' }
+    const q = new URLSearchParams(articleLink(item, [feed]).split('#')[1])
+    assert.equal(q.get('summary'), '1')
+    assert.equal(q.get('archive'), readerArchive ? '1' : '0')
+    assert.equal(articleLink({ ...item, feedUrl: 'other' }, [feed]), item.link)
+    assert.equal(new URLSearchParams(articleLink({ ...item, feedUrl: undefined, source: 'Publisher' }, [feed], { Publisher: 'rss' }).split('#')[1]).get('summary'), '1')
+  }
+  assert.equal(normFeed('rss').aiSummary, false)
+  assert.equal(articleLink({ link: 'https://example.com/story', feedUrl: 'rss' }, [normFeed({ url: 'rss', smartFilter: true })]), 'https://example.com/story')
+})

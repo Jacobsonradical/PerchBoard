@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react'
+import ArticleSummary from './ArticleSummary'
 
 const names = { local: 'PerchBoard reader', archive: 'Archive.today' }
 
@@ -8,7 +9,8 @@ export default function ArticleReader() {
   const raw = params.get('url') || ''
   let original = ''
   try { const u = new URL(raw); if (['http:', 'https:'].includes(u.protocol) && !u.username && !u.password) original = u.href } catch { /* Invalid links are displayed below. */ }
-  const local = params.get('local') === '1'
+  const summary = params.get('summary') === '1'
+  const local = params.get('local') === '1' || summary
   const archive = params.get('archive') === '1'
 
   useEffect(() => {
@@ -76,6 +78,7 @@ export default function ArticleReader() {
           {original && <a href={original} target="_blank" rel="noreferrer">Original article ↗</a>}
         </div>
       </nav>
+      {summary && <ArticleSummary key={original} article={state.article} busy={state.busy} sourceURL={original} />}
       <div className="reader-masthead">{publisher || 'Article reader'}</div>
       <div className="reader-status" role="status" aria-live="polite" aria-busy={state.busy}>
         {state.steps.map((step) => <p key={step.service} className={`reader-${step.status}`}>{step.message}</p>)}

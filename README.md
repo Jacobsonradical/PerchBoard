@@ -224,7 +224,8 @@ Your settings are saved to `~/.config/perchboard/` (override with the
   new items raise a notification.
 - **RSS article opening** — each feed has independent **Archive.today** and
   **PerchBoard reader** checkboxes, available when adding or editing a feed.
-  Leave both off to open the original website. Enable both to try PerchBoard
+  Leave both off to open the original website (unless AI summary is enabled).
+  Enable both to try PerchBoard
   first and open Archive.today directly in your browser if extraction fails.
   A separate reading page names the active service and announces the handoff
   before leaving PerchBoard. Archive.today is not fetched through our server;
@@ -236,6 +237,24 @@ Your settings are saved to `~/.config/perchboard/` (override with the
   links remain available. Article content is not saved to the dashboard.
   See [tested publishers and limitations](#article-reader-compatibility) for
   the current evidence behind publisher support.
+- **AI article summary** — in **Settings → AI article summary**, choose Claude
+  or OpenAI / GPT and enter your model ID and API key. These settings are
+  separate from smart filtering. Enable **AI summary** for individual feeds
+  under RSS feed settings; it also applies to Saved articles. Enabled articles
+  open in PerchBoard, with a floating, closable card above the article containing
+  two or three sentences in the article's language: what happened, who is
+  involved, and the main outcome or conclusion. Use **Show AI summary** to
+  reopen the card without another request.
+  Summaries use extracted article text, which is sent to the selected provider
+  when you open an enabled article; API charges may apply. The summary key is
+  stored server-side in its own owner-readable file and is never returned by
+  the configuration API. Successful summaries are cached in server memory for
+  up to one hour (up to 128 entries); changing the model, key or article text
+  causes a new request. No summary is generated if extraction fails or the
+  text exceeds the single-request limit of 60,000 characters. AI summaries may
+  contain errors and cannot guarantee that the extracted article is complete.
+  Original and selected Archive links remain available; PerchBoard cannot
+  insert its summary card into those external pages.
 - **Weather** — auto-detects your location (or search a place); shows the current
   temperature in both °C and °F, an hourly strip, and a past+future daily forecast
   with wind, rain %, and sunrise/sunset.

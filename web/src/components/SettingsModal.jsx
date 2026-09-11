@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react'
 import { api } from '../lib/api'
 import { requestNotifyPermission } from '../lib/notify'
 import { FONTS, FONT_SCALES } from '../lib/fonts'
+import SummarySettings from './SummarySettings'
 
 // SettingsModal handles global dashboard settings: fonts, background images
 // (upload, choose mode, shuffle interval) and enabling OS notifications.
@@ -264,6 +265,8 @@ export default function SettingsModal({ settings, onChange, onClose }) {
             </>
           )}
         </div>
+
+        <SummarySettings />
 
         <div style={{ textAlign: 'right', marginTop: 16 }}>
           <button className="btn primary" onClick={onClose}>Done</button>

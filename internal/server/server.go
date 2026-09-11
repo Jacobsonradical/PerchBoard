@@ -35,9 +35,10 @@ const (
 
 // Server holds dependencies shared by the handlers.
 type Server struct {
-	paths  config.Paths
-	static fs.FS          // the built React app (embedded or on-disk)
-	hist   *history.Store // persistent RSS item history
+	summary summaryState
+	paths   config.Paths
+	static  fs.FS          // the built React app (embedded or on-disk)
+	hist    *history.Store // persistent RSS item history
 }
 
 // New builds the Server. static is the filesystem rooted at the React build
@@ -49,7 +50,7 @@ func New(paths config.Paths, static fs.FS) *Server {
 	if err != nil {
 		hist = nil
 	}
-	return &Server{paths: paths, static: static, hist: hist}
+	return &Server{paths: paths, static: static, hist: hist, summary: summaryState{gate: make(chan struct{}, 1)}}
 }
 
 // Handler returns the root http.Handler with all routes registered.
@@ -75,6 +76,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/llm/config", s.handleLLMConfig)
 	mux.HandleFunc("/api/llm/test", s.handleLLMTest)
 	mux.HandleFunc("/api/llm/classify", s.handleLLMClassify)
+	mux.HandleFunc("/api/summary/config", s.handleSummaryConfig)
+	mux.HandleFunc("/api/summary", s.handleSummary)
 
 	// --- dashboard state ---
 	mux.HandleFunc("/api/config", s.handleConfig)
