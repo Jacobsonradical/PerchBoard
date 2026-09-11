@@ -234,6 +234,8 @@ Your settings are saved to `~/.config/perchboard/` (override with the
   links, author and date in a readable article layout. It extracts content
   returned by the publisher and cannot guarantee a complete article. Original
   links remain available. Article content is not saved to the dashboard.
+  See [tested publishers and limitations](#article-reader-compatibility) for
+  the current evidence behind publisher support.
 - **Weather** — auto-detects your location (or search a place); shows the current
   temperature in both °C and °F, an hourly strip, and a past+future daily forecast
   with wind, rain %, and sunrise/sunset.
@@ -248,6 +250,78 @@ Your settings are saved to `~/.config/perchboard/` (override with the
   dashboard, then groups the results per journal with a Paper/Review toggle.
   Credentials are used once and never stored. Needs Chrome/Chromium installed
   (the Docker image bundles Chromium).
+
+## Article reader compatibility
+
+The reader can sometimes extract text from pages that display a paywall, but
+it is not a universal paywall bypass. RSS availability does not mean that
+article text is accessible.
+
+**Tested September 11, 2026:** 60 article/page samples across 28 publishers,
+plus homepage or RSS checks for four more. The table describes the
+**PerchBoard reader**, not Archive.today. Counts show saved responses that
+yielded substantial text after extraction fixes; they are not ongoing success
+rates or proof of complete articles.
+
+- **Higher confidence:** extraction succeeded and a final live app check also
+  succeeded. Coverage is still limited to the sampled articles.
+- **Promising:** saved responses were extractable, but the publisher was not
+  included in the final live app check.
+- **Mixed / limited:** access was inconsistent, page types differed, or the
+  usable sample was particularly limited.
+- **Not successful:** none of the sampled pages yielded readable articles.
+- **Not established:** only homepage or RSS access was checked; no article
+  sample was obtained.
+
+| Publisher | Assessment | Extractable samples | Evidence / limitations |
+|---|---|---:|---|
+| BBC | Promising | 2/2 | Both saved article responses were extractable. |
+| The Guardian | Higher confidence | 2/2 | One article also passed the final live check. |
+| NPR | Higher confidence | 2/2 | One article also passed the final live check. |
+| CNN | Higher confidence | 2/2 | Both articles also passed the final live check. |
+| Fox News | Promising | 2/2 | Both saved article responses were extractable. |
+| ABC News | Mixed / limited | 1/2 | Ordinary article worked; live coverage is unsupported. |
+| CBS News | Promising | 2/2 | Both saved article responses were extractable. |
+| NBC News | Promising | 2/2 | Both saved article responses were extractable. |
+| CNBC | Promising | 2/2 | Both saved article responses were extractable. |
+| Financial Times | Not successful | 0/2 | Both requests returned HTTP 403. |
+| The Wall Street Journal | Not successful | 0/2 | Both requests returned HTTP 401; a later recheck had the same result. |
+| Bloomberg | Not successful | 0/2 | Both requests returned HTTP 403. |
+| The Atlantic | Promising | 2/2 | Both saved article responses were extractable. |
+| The Economist | Not successful | 0/2 | Both requests returned HTTP 403. |
+| Politico | Not successful | 0/2 | Both requests returned HTTP 403. |
+| Al Jazeera | Promising | 2/2 | Both saved article responses were extractable. |
+| The New York Times | Mixed / limited | 2/2 | Saved responses worked, but the final live request returned HTTP 403. |
+| The Washington Post | Mixed / limited | 1/3 | Ordinary news article also passed live; two reader-callout pages lacked substantial text. |
+| WIRED | Mixed / limited | 2/2 | Includes a discount-code page, so ordinary news coverage is limited. |
+| TechCrunch | Mixed / limited | 1/2 | One article worked; the other URL returned HTTP 404. |
+| Reuters | Not established | — | Homepage/directory returned HTTP 401; no article sample. |
+| Associated Press | Not successful | 0/2 | Both requests returned HTTP 403. |
+| USA Today | Mixed / limited | 3/4 | Two news articles and a shopping page worked; live coverage is unsupported. |
+| Los Angeles Times | Higher confidence | 2/4 | Two articles worked, including one live recheck; two collection pages were rejected. |
+| The Boston Globe | Promising | 2/2 | Both saved article responses were extractable. |
+| The Telegraph | Not established | — | Homepage returned HTTP 402 and RSS returned HTTP 403; no article sample. |
+| The Times (UK) | Not successful | 0/2 | One unsupported live page and one subscription preview. |
+| South China Morning Post | Higher confidence | 2/2 | Both articles also passed the final live check. |
+| CBC | Higher confidence | 1/1 | Also passed live, but only one article was sampled. |
+| DW | Promising | 2/2 | Both saved article responses were extractable. |
+| France 24 | Not established | — | RSS returned HTTP 403; no confirmed article sample from the homepage. |
+| Axios | Not established | — | Homepage and RSS returned HTTP 403; no article sample. |
+
+Overall, 39 of the 60 saved responses were extractable. A separate final live
+check succeeded on nine of ten requests across eight publishers; the failed
+request was to The New York Times. HTTP 401/403 results describe requests from
+the test environment, not whether you can read the same page in your browser.
+Publisher changes, network conditions and article formats can change results.
+Live coverage, collections, videos and interactive elements are not covered
+by a successful ordinary-text extraction result.
+
+**Archive.today fallback:** enabling both services tries PerchBoard first,
+then opens Archive.today in your browser if extraction fails. A successful
+redirect only means the handoff worked; it does not confirm that a readable
+snapshot exists. These tests do not establish per-publisher Archive coverage.
+If Archive.today also cannot provide a readable copy, the selected services
+cannot read that article; the original link remains available.
 
 ---
 
