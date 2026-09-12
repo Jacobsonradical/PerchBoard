@@ -100,7 +100,7 @@ starts the container in the background.
 git clone https://github.com/Jacobsonradical/PerchBoard.git
 cd PerchBoard
 sudo docker build -t perchboard:latest .
-sudo docker run -d --name perchboard --restart unless-stopped -p 127.0.0.1:7171:7171 -v perchboard-data:/data perchboard:latest
+sudo docker run -d --name perchboard --restart unless-stopped --dns 1.1.1.1 -p 127.0.0.1:7171:7171 -v perchboard-data:/data perchboard:latest
 ```
 
 What the `sudo docker run` flags mean:
@@ -110,10 +110,29 @@ What the `sudo docker run` flags mean:
 - `-p 127.0.0.1:7171:7171` — serve it on your machine's port 7171, reachable
   from this machine only (not from other devices on your network). Drop the
   `127.0.0.1:` prefix only if you deliberately want to open it to your LAN.
+- `--dns 1.1.1.1` — use Cloudflare DNS instead of inheriting host/VPN DNS; substitute a reachable resolver if your network requires one.
 - `-v perchboard-data:/data` — save your dashboard + backgrounds in a volume so
   they survive restarts and updates. This is a Docker-managed **named volume**, so
   it works the same on Windows, macOS, and Linux — there are no host folder paths
   to translate (nothing like `C:\...` to get right).
+
+The Compose file and Docker run examples use Cloudflare DNS (`1.1.1.1`) for PerchBoard. If your network
+requires a different resolver, change the service's `dns` entry to a reachable
+server. Errors such as `lookup … on 127.0.0.11:53: server misbehaving` indicate
+Docker DNS failure and can affect feeds, weather, markets, readers and summaries
+at once. Check resolution inside the container:
+
+```bash
+sudo docker exec perchboard nslookup hacker-news.firebaseio.com
+sudo docker exec perchboard nslookup hacker-news.firebaseio.com 1.1.1.1
+```
+
+After changing `dns` in your deployed Compose file, run this from its existing
+folder to recreate only PerchBoard with the new settings and retain its named volume:
+
+```bash
+sudo docker compose up -d --force-recreate --no-deps perchboard
+```
 
 ### Step 4 — Open it
 
@@ -152,7 +171,7 @@ cd PerchBoard
 git pull
 sudo docker build -t perchboard:latest .
 sudo docker rm -f perchboard
-sudo docker run -d --name perchboard --restart unless-stopped -p 127.0.0.1:7171:7171 -v perchboard-data:/data perchboard:latest
+sudo docker run -d --name perchboard --restart unless-stopped --dns 1.1.1.1 -p 127.0.0.1:7171:7171 -v perchboard-data:/data perchboard:latest
 ```
 
 Your config and backgrounds live in the `perchboard-data` volume, so they
@@ -226,7 +245,8 @@ Your settings are saved to `~/.config/perchboard/` (override with the
   Enable both to try PerchBoard
   first and open Archive.today directly in your browser if extraction fails.
   A separate reading page names the active service and announces the handoff
-  before leaving PerchBoard. Archive.today is not fetched through our server;
+  before leaving PerchBoard when summaries are off. In that mode, Archive.today
+  is not fetched through our server;
   its page shows the available snapshot or its own error, and PerchBoard cannot
   verify that result across sites. This also applies to Saved articles.
   PerchBoard preserves available headings, images, captions, lists, quotations,
@@ -248,8 +268,15 @@ Your settings are saved to `~/.config/perchboard/` (override with the
   stored server-side in its own owner-readable file and is never returned by
   the configuration API. Successful summaries are cached in server memory for
   up to one hour (up to 128 entries); changing the model, key or article text
-  causes a new request. No summary is generated if extraction fails or the
-  text exceeds the single-request limit of 60,000 characters. AI summaries may
+  causes a new request. When local extraction fails and Archive.today is selected,
+  PerchBoard keeps the summary tab open and tries retrieving the archived text.
+  Use **Read on Archive.today in another tab** to open the snapshot separately.
+  If automated retrieval is blocked, paste the article body into the summary
+  panel and click **Summarize pasted text**. Pasted text is sent to your configured
+  provider only on submission, stays out of dashboard storage, and is labeled as
+  the summary's source. It must contain 600–60,000 characters. Use **Replace pasted
+  text** to correct the input. No summary is generated without article text or
+  when text exceeds the single-request limit of 60,000 characters. AI summaries may
   contain errors and cannot guarantee that the extracted article is complete.
   Original and selected Archive links remain available; PerchBoard cannot
   insert its summary card into those external pages.
@@ -334,7 +361,9 @@ Live coverage, collections, videos and interactive elements are not covered
 by a successful ordinary-text extraction result.
 
 **Archive.today fallback:** enabling both services tries PerchBoard first,
-then opens Archive.today in your browser if extraction fails. A successful
+then opens Archive.today in your browser if extraction fails. With AI summaries
+enabled, PerchBoard stays open, attempts archive extraction, and offers a separate
+Archive tab plus pasted-text summarization if needed. A successful
 redirect only means the handoff worked; it does not confirm that a readable
 snapshot exists. These tests do not establish per-publisher Archive coverage.
 If Archive.today also cannot provide a readable copy, the selected services

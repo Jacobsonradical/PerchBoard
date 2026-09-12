@@ -577,20 +577,28 @@ body.reader-page { background: #f9f8f5; color: #242320; }
 .reader-handoff a { display: inline-block; margin-bottom: 8px; font-weight: 600; color: #242320; }
 
 /* Summary floats above the paper without blocking the article or its links. */
-.article-summary { position: sticky; top: 14px; z-index: 10; max-width: 820px; margin: 24px auto; padding: 20px 24px; border: 1px solid #d6dfd3; border-radius: 18px; background: linear-gradient(120deg, #f3f7ef, #fffefb); box-shadow: 0 12px 38px #26372218, 0 2px 5px #26372208; color: #26352b; font: 14px/1.6 var(--font); max-height: 45vh; overflow-y: auto; }
+.article-summary { position: sticky; top: 14px; z-index: 10; max-width: 820px; margin: 24px auto; padding: 20px 24px; border: 1px solid #45604f; border-radius: 18px; background: linear-gradient(120deg, #243d30, #182b22); box-shadow: 0 12px 38px #13271d33, 0 2px 5px #13271d22; color: #f2f6ef; font: 14px/1.6 var(--font); max-height: 45vh; overflow-y: auto; }
 .article-summary-heading, .article-summary-heading > div { display: flex; align-items: center; gap: 10px; }
 .article-summary-heading { justify-content: space-between; }
-.article-summary-star { color: #678057; font-size: 22px; }
-.article-summary-label { color: #6a7968; font-size: 10px; text-transform: uppercase; letter-spacing: .09em; }
-.article-summary-close { flex-shrink: 0; width: 30px; height: 30px; border: 0; border-radius: 50%; background: #e7ecdf; color: #40533b; font-size: 22px; cursor: pointer; }
+.article-summary-star { color: #b9d6a5; font-size: 22px; }
+.article-summary-label { color: #bfd0ba; font-size: 10px; text-transform: uppercase; letter-spacing: .09em; }
+.article-summary-close { flex-shrink: 0; width: 30px; height: 30px; border: 0; border-radius: 50%; background: #38513f; color: #edf4e7; font-size: 22px; cursor: pointer; }
 .article-summary-text { font: 18px/1.65 Georgia, 'Times New Roman', serif; margin: 12px 0; }
-.article-summary-message, .article-summary-loading p { margin: 12px 0; color: #5b6957; }
-.article-summary-footnote { font-size: 10px; color: #71806b; overflow-wrap: anywhere; }
-.article-summary-message button, .article-summary-reopen button { border: 1px solid #cbd6c4; background: #f3f7ef; color: #40533b; border-radius: 20px; padding: 6px 12px; cursor: pointer; font: inherit; }
+.article-summary-message, .article-summary-loading p { margin: 12px 0; color: #d6e2cf; }
+.article-summary-footnote { font-size: 10px; color: #b9cbb1; overflow-wrap: anywhere; }
+.article-summary-message button, .article-summary-reopen button { border: 1px solid #66805d; background: #243d30; color: #edf4e7; border-radius: 20px; padding: 6px 12px; cursor: pointer; font: inherit; }
+.article-summary-with-paste { max-height: 70vh; }
+.article-summary-paste { margin: 14px 0; }
+.article-summary-paste label { display: block; font-weight: 600; }
+.article-summary-paste textarea { display: block; width: 100%; box-sizing: border-box; margin: 8px 0; padding: 10px; background: #182b22; color: #f2f6ef; border: 1px solid #66805d; border-radius: 8px; font: inherit; resize: vertical; }
+.article-summary-paste textarea::placeholder { color: #b9cbb1; }
+.article-summary-paste p { color: #d6e2cf; font-size: 12px; }
+.article-summary-paste button { border: 1px solid #66805d; background: #243d30; color: #edf4e7; border-radius: 20px; padding: 6px 12px; cursor: pointer; font: inherit; }
+.article-summary-paste textarea:focus-visible { outline: 2px solid #c2e2ac; outline-offset: 3px; }
 .article-summary-reopen { max-width: 820px; margin: 18px auto; font-size: 12px; }
-.article-summary-loading span { display: block; height: 8px; margin: 9px 0; background: #e3ebdd; border-radius: 5px; }
+.article-summary-loading span { display: block; height: 8px; margin: 9px 0; background: #476140; border-radius: 5px; }
 .article-summary-loading span:last-child { width: 68%; margin-bottom: 16px; }
-.article-summary button:focus-visible, .article-summary-reopen button:focus-visible { outline: 2px solid #57794d; outline-offset: 3px; }
+.article-summary button:focus-visible, .article-summary-reopen button:focus-visible { outline: 2px solid #c2e2ac; outline-offset: 3px; }
 .summary-settings-fields { border: 0; padding: 0; margin: 12px 0; min-width: 0; }
 .summary-settings-fields .text-input { margin-bottom: 12px; }
 .summary-settings-fields .chips { margin-bottom: 12px; }

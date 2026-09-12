@@ -7,6 +7,9 @@ services:
   perchboard:
     image: ghcr.io/jacobsonradical/perchboard:latest
     container_name: perchboard
+    # Use a reachable resolver instead of inheriting network-specific host DNS.
+    dns:
+      - 1.1.1.1
     ports:
       # Publish on loopback only, so the dashboard is reachable from this machine
       # but not from other devices on the same network. To open it to your LAN
