@@ -534,7 +534,7 @@ function RSSSettings({ widget, feeds, filters, setSettings, done }) {
           <button className="btn primary" onClick={addFeed}>Add</button>
         </div>
         <ReadingOptions value={reading} onChange={(patch) => setReading({ ...reading, ...patch })} />
-        <div className="muted-note">Choose how titles open for each feed, including Saved. With all options off, titles open the original website. AI summary opens the PerchBoard reading page first and uses its own model and key in Settings → AI article summary. PerchBoard extracts available text; a full article is not guaranteed. Archive.today opens directly in your browser, using existing snapshots; it may require verification.</div>
+        <div className="muted-note">Choose how titles open for each feed, including Saved. With all options off, titles open the original website. AI summary keeps a PerchBoard tab open using the selected reading service and its own model and key in Settings → AI article summary. With no reading service selected, summaries use PerchBoard extraction. PerchBoard extracts available text; a full article is not guaranteed. Archive.today opens directly in your browser, using existing snapshots; it may require verification.</div>
       </div>
 
       <div className="section">
@@ -599,7 +599,9 @@ function ReadingOptions({ value, onChange }) {
       <label><input type="checkbox" checked={!!value.aiSummary} onChange={(e) => onChange({ aiSummary: e.target.checked })} />AI summary</label>
     </div>
     <div className="muted-note">{value.aiSummary
-      ? 'Open in PerchBoard with a short AI summary. Original and selected Archive links remain available.'
+      ? (value.readerArchive && !value.readerLocal
+        ? 'Use Archive.today text for the summary in PerchBoard. Open Archive in another tab; paste article text if retrieval is blocked.'
+        : 'Open in PerchBoard with a short AI summary. Original and selected Archive links remain available.')
       : value.readerLocal && value.readerArchive
       ? 'PerchBoard first → open Archive.today in your browser if extraction fails.'
       : value.readerLocal ? 'Use PerchBoard reader.' : value.readerArchive ? 'Use Archive.today.' : 'Default: open original website.'}</div>

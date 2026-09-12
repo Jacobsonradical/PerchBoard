@@ -113,6 +113,9 @@ func Summarize(ctx context.Context, provider, key, model string, in SummaryInput
 	}
 	var raw strings.Builder
 	if provider == ProviderClaude {
+		if reply.StopReason == "max_tokens" {
+			return nil, errors.New("the summary reached its output token limit before finishing")
+		}
 		if reply.StopReason != "end_turn" {
 			return nil, errors.New("the model did not finish a usable summary")
 		}
@@ -122,10 +125,23 @@ func Summarize(ctx context.Context, provider, key, model string, in SummaryInput
 			}
 		}
 	} else {
-		if len(reply.Choices) == 0 || reply.Choices[0].FinishReason != "stop" || reply.Choices[0].Message.Refusal != "" {
+		if len(reply.Choices) == 0 {
+			return nil, errors.New("the summary provider returned no response choices")
+		}
+		choice := reply.Choices[0]
+		if choice.Message.Refusal != "" || choice.FinishReason == "content_filter" {
+			return nil, errors.New("the summary provider declined to summarize this text")
+		}
+		if choice.FinishReason == "length" {
+			return nil, errors.New("the summary reached its output token limit before finishing; reasoning tokens also count toward this limit")
+		}
+		if choice.FinishReason != "stop" {
 			return nil, errors.New("the model did not finish a usable summary")
 		}
-		raw.WriteString(reply.Choices[0].Message.Content)
+		if strings.TrimSpace(choice.Message.Content) == "" {
+			return nil, errors.New("the summary provider returned an empty response")
+		}
+		raw.WriteString(choice.Message.Content)
 	}
 	var result struct {
 		Sentences []string `json:"sentences"`

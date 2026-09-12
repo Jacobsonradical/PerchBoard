@@ -93,3 +93,23 @@ func TestSummaryRejectsInsufficientAndOversizedTextBeforeCallingProvider(t *test
 		}
 	}
 }
+
+func TestSummaryExplainsProviderFailures(t *testing.T) {
+	old := summaryClient
+	t.Cleanup(func() { summaryClient = old })
+	for _, tc := range []struct{ provider, response, want string }{
+		{ProviderOpenAI, `{"choices":[{"finish_reason":"length","message":{"content":""}}]}`, "reasoning tokens"},
+		{ProviderOpenAI, `{"choices":[]}`, "no response choices"},
+		{ProviderOpenAI, `{"choices":[{"finish_reason":"stop","message":{"content":""}}]}`, "empty response"},
+		{ProviderOpenAI, `{"choices":[{"finish_reason":"stop","message":{"refusal":"private provider text"}}]}`, "declined"},
+		{ProviderClaude, `{"stop_reason":"max_tokens","content":[]}`, "token limit"},
+	} {
+		t.Run(tc.want, func(t *testing.T) {
+			summaryClient = &http.Client{Transport: summaryTransport(func(*http.Request) (*http.Response, error) { return summaryResponse(tc.response), nil })}
+			_, err := Summarize(context.Background(), tc.provider, "key", "model", summaryFixture())
+			if err == nil || !strings.Contains(err.Error(), tc.want) || strings.Contains(err.Error(), "private provider text") {
+				t.Fatalf("unexpected error: %v", err)
+			}
+		})
+	}
+}

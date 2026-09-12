@@ -10,8 +10,9 @@ export default function ArticleReader() {
   let original = ''
   try { const u = new URL(raw); if (['http:', 'https:'].includes(u.protocol) && !u.username && !u.password) original = u.href } catch { /* Invalid links are displayed below. */ }
   const summary = params.get('summary') === '1'
-  const local = params.get('local') === '1' || summary
   const archive = params.get('archive') === '1'
+  // Summary-only feeds need a text source; an explicit Archive choice takes precedence.
+  const local = params.get('local') === '1' || (summary && !archive)
 
   useEffect(() => {
     document.body.classList.add('reader-page')

@@ -270,6 +270,8 @@ Your settings are saved to `~/.config/perchboard/` (override with the
   up to one hour (up to 128 entries); changing the model, key or article text
   causes a new request. When local extraction fails and Archive.today is selected,
   PerchBoard keeps the summary tab open and tries retrieving the archived text.
+  With only Archive.today selected, it uses Archive directly, skipping local
+  extraction. With neither reading service selected, summaries use local extraction.
   Use **Read on Archive.today in another tab** to open the snapshot separately.
   If automated retrieval is blocked, paste the article body into the summary
   panel and click **Summarize pasted text**. Pasted text is sent to your configured
