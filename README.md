@@ -245,8 +245,7 @@ Your settings are saved to `~/.config/perchboard/` (override with the
   Enable both to try PerchBoard
   first and open Archive.today directly in your browser if extraction fails.
   A separate reading page names the active service and announces the handoff
-  before leaving PerchBoard when summaries are off. In that mode, Archive.today
-  is not fetched through our server;
+  before leaving PerchBoard. Archive.today is not fetched through our server;
   its page shows the available snapshot or its own error, and PerchBoard cannot
   verify that result across sites. This also applies to Saved articles.
   PerchBoard preserves available headings, images, captions, lists, quotations,
@@ -268,17 +267,13 @@ Your settings are saved to `~/.config/perchboard/` (override with the
   stored server-side in its own owner-readable file and is never returned by
   the configuration API. Successful summaries are cached in server memory for
   up to one hour (up to 128 entries); changing the model, key or article text
-  causes a new request. When local extraction fails and Archive.today is selected,
-  PerchBoard keeps the summary tab open and tries retrieving the archived text.
-  With only Archive.today selected, it uses Archive directly, skipping local
-  extraction. With neither reading service selected, summaries use local extraction.
-  Use **Read on Archive.today in another tab** to open the snapshot separately.
-  If automated retrieval is blocked, paste the article body into the summary
-  panel and click **Summarize pasted text**. Pasted text is sent to your configured
-  provider only on submission, stays out of dashboard storage, and is labeled as
-  the summary's source. It must contain 600–60,000 characters. Use **Replace pasted
-  text** to correct the input. No summary is generated without article text or
-  when text exceeds the single-request limit of 60,000 characters. AI summaries may
+  causes a new request. Summaries are available only when the PerchBoard reader
+  can extract the article. If extraction fails, no summary is offered; selected
+  Archive.today fallback still opens normally. Archive-only reading has no
+  summary, even when the feed's AI summary option is enabled. With neither
+  reading service selected, summaries use local extraction. No summary is
+  generated when text exceeds the single-request limit of 60,000 characters.
+  AI summaries may
   contain errors and cannot guarantee that the extracted article is complete.
   Original and selected Archive links remain available; PerchBoard cannot
   insert its summary card into those external pages.
@@ -363,9 +358,8 @@ Live coverage, collections, videos and interactive elements are not covered
 by a successful ordinary-text extraction result.
 
 **Archive.today fallback:** enabling both services tries PerchBoard first,
-then opens Archive.today in your browser if extraction fails. With AI summaries
-enabled, PerchBoard stays open, attempts archive extraction, and offers a separate
-Archive tab plus pasted-text summarization if needed. A successful
+then opens Archive.today in your browser if extraction fails. Summaries are
+unavailable after fallback or with Archive-only reading. A successful
 redirect only means the handoff worked; it does not confirm that a readable
 snapshot exists. These tests do not establish per-publisher Archive coverage.
 If Archive.today also cannot provide a readable copy, the selected services

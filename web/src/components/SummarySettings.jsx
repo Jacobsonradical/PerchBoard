@@ -41,7 +41,7 @@ export default function SummarySettings() {
 
   return <div className="section summary-settings">
     <label>AI article summary (optional)</label>
-    <p className="muted-note">Get two or three sentences about what happened, who is involved, and the main outcome, in the article’s language. Enable AI summary separately for each RSS feed.</p>
+    <p className="muted-note">Get two or three sentences about what happened, who is involved, and the main outcome, in the article’s language. Enable AI summary separately for each RSS feed. Summaries are available only for articles the PerchBoard reader can read; Archive.today pages and failed extractions have no summary.</p>
     <p className="muted-note">Uses its own model and API key, independent of smart filtering. Opening an enabled article sends its extracted text to your selected provider and may incur API charges. The key stays on the PerchBoard server after saving.</p>
     {saved?.configured && !editing ? <div className="s1-save-panel">
       <div className="s1-lock-note">{saved.provider === 'openai' ? 'OpenAI / GPT' : 'Claude'} · {saved.model} · Summary key saved</div>

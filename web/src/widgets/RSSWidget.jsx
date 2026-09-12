@@ -534,7 +534,7 @@ function RSSSettings({ widget, feeds, filters, setSettings, done }) {
           <button className="btn primary" onClick={addFeed}>Add</button>
         </div>
         <ReadingOptions value={reading} onChange={(patch) => setReading({ ...reading, ...patch })} />
-        <div className="muted-note">Choose how titles open for each feed, including Saved. With all options off, titles open the original website. AI summary keeps a PerchBoard tab open using the selected reading service and its own model and key in Settings → AI article summary. With no reading service selected, summaries use PerchBoard extraction. PerchBoard extracts available text; a full article is not guaranteed. Archive.today opens directly in your browser, using existing snapshots; it may require verification.</div>
+        <div className="muted-note">Choose how titles open for each feed, including Saved. With all options off, titles open the original website. AI summaries are available only when the PerchBoard reader can extract the article. Archive.today pages and failed extractions have no summary. Configure its separate model and key in Settings → AI article summary. With no reading service selected, summaries use PerchBoard extraction. PerchBoard extracts available text; a full article is not guaranteed. Archive.today opens directly in your browser, using existing snapshots; it may require verification.</div>
       </div>
 
       <div className="section">
@@ -600,8 +600,8 @@ function ReadingOptions({ value, onChange }) {
     </div>
     <div className="muted-note">{value.aiSummary
       ? (value.readerArchive && !value.readerLocal
-        ? 'Use Archive.today text for the summary in PerchBoard. Open Archive in another tab; paste article text if retrieval is blocked.'
-        : 'Open in PerchBoard with a short AI summary. Original and selected Archive links remain available.')
+        ? 'Open Archive.today. AI summaries are unavailable with Archive-only reading.'
+        : 'Summarize only when PerchBoard can read the article. No summary is available after an Archive.today fallback.')
       : value.readerLocal && value.readerArchive
       ? 'PerchBoard first → open Archive.today in your browser if extraction fails.'
       : value.readerLocal ? 'Use PerchBoard reader.' : value.readerArchive ? 'Use Archive.today.' : 'Default: open original website.'}</div>

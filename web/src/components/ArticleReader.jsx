@@ -32,7 +32,7 @@ export default function ArticleReader() {
         const fallback = (service === 'archive' && local)
         steps.push({ service, status: 'loading', message: `${fallback ? 'Falling back to ' : 'Trying '}${names[service]}…` })
         setState({ steps: [...steps], article: null, busy: true })
-        if (service === 'archive' && !summary) {
+        if (service === 'archive') {
           const externalURL = `https://archive.ph/newest/${original}`
           steps[steps.length - 1] = { service, status: 'external', message: `${fallback ? 'PerchBoard could not read this article. Falling back to' : 'Opening'} Archive.today directly in your browser…` }
           setState({ steps: [...steps], article: null, busy: false, externalURL })
@@ -79,16 +79,12 @@ export default function ArticleReader() {
           {original && <a href={original} target="_blank" rel="noreferrer">Original article ↗</a>}
         </div>
       </nav>
-      {summary && <ArticleSummary key={original} article={state.article} busy={state.busy} sourceURL={original} allowPaste={archive && !!original && !state.busy && !state.article} />}
+      {summary && article?.service === 'local' && <ArticleSummary key={original} article={article} busy={false} sourceURL={original} />}
       <div className="reader-masthead">{publisher || 'Article reader'}</div>
       <div className="reader-status" role="status" aria-live="polite" aria-busy={state.busy}>
         {state.steps.map((step) => <p key={step.service} className={`reader-${step.status}`}>{step.message}</p>)}
         {state.error && <p>{state.error}</p>}
       </div>
-      {summary && archiveURL && state.steps.some((step) => step.service === 'archive') && <p className="reader-handoff">
-        <a href={archiveURL} target="_blank" rel="noreferrer">Read on Archive.today in another tab ↗</a><br />
-        Keep this tab open for your summary. We’ll try reading the archived text here; if that fails, copy the article text from Archive and paste it into the summary panel.
-      </p>}
       {state.externalURL && <p className="reader-handoff">
         <a href={state.externalURL}>Continue to Archive.today →</a><br />
         Archive.today will show the available snapshot or its own error. PerchBoard cannot verify the result after you leave this page.

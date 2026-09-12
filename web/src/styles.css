@@ -587,14 +587,6 @@ body.reader-page { background: #f9f8f5; color: #242320; }
 .article-summary-message, .article-summary-loading p { margin: 12px 0; color: #d6e2cf; }
 .article-summary-footnote { font-size: 10px; color: #b9cbb1; overflow-wrap: anywhere; }
 .article-summary-message button, .article-summary-reopen button { border: 1px solid #66805d; background: #243d30; color: #edf4e7; border-radius: 20px; padding: 6px 12px; cursor: pointer; font: inherit; }
-.article-summary-with-paste { max-height: 70vh; }
-.article-summary-paste { margin: 14px 0; }
-.article-summary-paste label { display: block; font-weight: 600; }
-.article-summary-paste textarea { display: block; width: 100%; box-sizing: border-box; margin: 8px 0; padding: 10px; background: #182b22; color: #f2f6ef; border: 1px solid #66805d; border-radius: 8px; font: inherit; resize: vertical; }
-.article-summary-paste textarea::placeholder { color: #b9cbb1; }
-.article-summary-paste p { color: #d6e2cf; font-size: 12px; }
-.article-summary-paste button { border: 1px solid #66805d; background: #243d30; color: #edf4e7; border-radius: 20px; padding: 6px 12px; cursor: pointer; font: inherit; }
-.article-summary-paste textarea:focus-visible { outline: 2px solid #c2e2ac; outline-offset: 3px; }
 .article-summary-reopen { max-width: 820px; margin: 18px auto; font-size: 12px; }
 .article-summary-loading span { display: block; height: 8px; margin: 9px 0; background: #476140; border-radius: 5px; }
 .article-summary-loading span:last-child { width: 68%; margin-bottom: 16px; }
